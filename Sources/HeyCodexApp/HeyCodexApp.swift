@@ -69,12 +69,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
         if controller.needsFirstRunSetup {
-            menu.addItem(item("Complete Setup…", #selector(openFirstRunSetup)))
-            menu.addItem(item("Enable ChatGPT Voice Shortcut…", #selector(enableVoiceShortcut)))
+            // One door while setup is unfinished. Offering "Complete Setup",
+            // "Enable ChatGPT Voice Shortcut" and "Test ChatGPT Voice Shortcut"
+            // side by side left people guessing which one was next.
+            let finish = item("Finish Setup…", #selector(openFirstRunSetup))
+            finish.attributedTitle = NSAttributedString(
+                string: "Finish Setup…",
+                attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)])
+            menu.addItem(finish)
+        } else {
+            menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
         }
-        // Kept out of the setup-only block: "did my shortcut break?" is the most
-        // common thing to check, and it should not require re-entering setup.
-        menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
         let phraseTitle = controller.hasEnrolledWakePhrase
             ? "Wake Phrase: “\(controller.settings.wakePhrase)”…"
             : "Use My Own Wake Phrase…"
