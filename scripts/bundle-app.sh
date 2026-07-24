@@ -21,12 +21,20 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 
 # A release bundle must be self-contained: use a physical copy, never a source
 # checkout symlink. Models are fetched separately by scripts/fetch-models.sh.
-if [ ! -d "$ROOT/Models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01" ] || \
-   [ ! -d "$ROOT/Models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8" ]; then
-    echo "Missing models. Run ./scripts/fetch-models.sh before bundling." >&2
+#
+# Copy only what the shipped app loads — the keyword spotter and its keyword
+# list. The Parakeet ASR model in Models/ is a development asset for the
+# selftest decode probes; Hey Codex never transcribes, so bundling it added
+# 631 MB to a download for a capability the product does not have. Anything the
+# app needs at runtime must be added here explicitly, not swept in wholesale.
+KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+if [ ! -d "$ROOT/Models/$KWS_MODEL" ] || [ ! -f "$ROOT/Models/keywords.txt" ]; then
+    echo "Missing wake-word model or keyword list. Run ./scripts/fetch-models.sh before bundling." >&2
     exit 1
 fi
-ditto "$ROOT/Models" "$APP/Contents/Resources/Models"
+mkdir -p "$APP/Contents/Resources/Models"
+ditto "$ROOT/Models/$KWS_MODEL" "$APP/Contents/Resources/Models/$KWS_MODEL"
+cp "$ROOT/Models/keywords.txt" "$APP/Contents/Resources/Models/keywords.txt"
 
 SIGN_ID="${HEYCODEX_SIGN_ID:-}"
 ENTITLEMENTS="$ROOT/scripts/entitlements.plist"
