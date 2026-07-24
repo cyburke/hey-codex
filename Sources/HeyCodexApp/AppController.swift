@@ -278,7 +278,7 @@ final class AppController {
         updated.wakeKeywordsThreshold = threshold
         try SettingsStore().save(updated)
         settings = updated
-        if isListening { stopPipeline(); startListening() }
+        restartListeningAfterPhraseChange()
     }
 
     /// Discard an enrollment and return to the bundled "Hey Codex" phrase.
@@ -289,7 +289,22 @@ final class AppController {
         updated.wakeKeywordsThreshold = Settings.default.wakeKeywordsThreshold
         try SettingsStore().save(updated)
         settings = updated
-        if isListening { stopPipeline(); startListening() }
+        restartListeningAfterPhraseChange()
+    }
+
+    /// Bring the listener up on the new phrase, whether or not it was running.
+    ///
+    /// Unlike the other settings paths, this one is reached *from enrollment*,
+    /// which deliberately stopped the listener to take the microphone. A plain
+    /// `if isListening` check is therefore always false here, so the listener
+    /// would stay down until the enrollment window finished closing — leaving
+    /// the app deaf across the confirmation dialog and for the engine's warmup
+    /// after it. Starting here instead means the new engine builds while the
+    /// user is still reading the confirmation.
+    private func restartListeningAfterPhraseChange() {
+        stopPipeline()
+        guard isMicrophoneAuthorized else { return }
+        startListening()
     }
 
     private func sendLaunchShortcut() {
