@@ -1,11 +1,14 @@
 Hey Codex
-Copyright (c) 2026 lilmelon77
+Copyright (c) 2026 Eliott Burke (https://github.com/cyburke) — modifications
+Copyright (c) 2026 littlemelon77 — original Hey Claude work
 
 Hey Codex is a modified GPL-3.0 fork of littlemelon77/hey-claude:
   https://github.com/littlemelon77/hey-claude
-Changes include replacing Claude-specific behavior with a local ChatGPT Voice
-shortcut helper and a macOS menu-bar interface. The original copyright and
-GPL-3.0 terms are preserved.
+Substantial portions of the original remain, including the audio capture
+pipeline and the sherpa-onnx wake-word engine integration. Changes include
+replacing Claude-specific behavior with a local ChatGPT Voice shortcut helper,
+a rebuilt menu-bar interface, and Voice-panel state observation. The original
+copyright and GPL-3.0 terms are preserved.
 
 This product is licensed under the GNU General Public License v3.0 (see LICENSE).
 It includes and/or builds upon the following third-party components, each under
@@ -15,7 +18,7 @@ its own license:
 sherpa-onnx — https://github.com/k2-fsa/sherpa-onnx
   Copyright (c) 2023 Xiaomi Corporation
   Licensed under the Apache License, Version 2.0.
-  The Swift binding in Sources/HeyClaudeKit/SherpaOnnx.swift is adapted from the
+  The Swift binding in Sources/HeyCodexKit/SherpaOnnx.swift is adapted from the
   upstream project. The prebuilt static xcframework is fetched at build time by
   scripts/fetch-sherpa.sh and is not redistributed in this repository.
 
@@ -24,9 +27,11 @@ ONNX Runtime — https://github.com/microsoft/onnxruntime
   Licensed under the MIT License.
   Linked into the sherpa-onnx static library (see scripts/fetch-sherpa.sh).
 
-Speech models (fetched at build time by scripts/fetch-models.sh; not redistributed):
-  - KWS zipformer (gigaspeech) and NeMo Parakeet TDT, distributed via the
-    k2-fsa/sherpa-onnx model releases, under their respective upstream licenses.
+Speech models (fetched at build time by scripts/fetch-models.sh; not redistributed
+in this repository, but the KWS model IS redistributed inside release .app bundles):
+  - KWS zipformer (gigaspeech), distributed via the k2-fsa/sherpa-onnx model
+    releases under its upstream license. Bundled into HeyCodex.app.
+  - NeMo Parakeet TDT, same source. Optional developer-only asset; not bundled.
 
 General Sans (font) — https://www.fontshare.com/fonts/general-sans
   Copyright (c) 2017-2021 Indian Type Foundry

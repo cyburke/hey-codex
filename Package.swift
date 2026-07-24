@@ -5,12 +5,12 @@ let package = Package(
     name: "HeyCodex",
     platforms: [.macOS("14.4")],   // NSHostingMenu (status-item menu) needs 14.4+
     products: [
-        .library(name: "HeyCodexKit", targets: ["HeyClaudeKit"]),
+        .library(name: "HeyCodexKit", targets: ["HeyCodexKit"]),
         // On-machine test harness: this CLT-only toolchain has no XCTest runner
         // (`xcrun --find xctest` fails), so the XCTest files in
-        // Tests/HeyClaudeKitTests are retained for CI/Xcode while verification
+        // Tests/HeyCodexKitTests are retained for CI/Xcode while verification
         // here runs through this executable. See internal design notes.
-        .executable(name: "hey-codex-selftest", targets: ["heyclaude-selftest"]),
+        .executable(name: "hey-codex-selftest", targets: ["hey-codex-selftest"]),
         .executable(name: "HeyCodexApp", targets: ["HeyCodexApp"]),
     ],
     dependencies: [],
@@ -23,9 +23,9 @@ let package = Package(
             path: "Sources/CSherpaOnnx/sherpa-onnx.xcframework"
         ),
         .target(
-            name: "HeyClaudeKit",
+            name: "HeyCodexKit",
             dependencies: ["CSherpaOnnx"],
-            path: "Sources/HeyClaudeKit",
+            path: "Sources/HeyCodexKit",
             linkerSettings: [
                 // The static archive bundles onnxruntime + C++ code but not the
                 // C++ runtime or system frameworks, so link them on the consumer.
@@ -35,56 +35,27 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "heyclaude-selftest",
-            dependencies: ["HeyClaudeKit"],
-            path: "Sources/heyclaude-selftest"
+            name: "hey-codex-selftest",
+            dependencies: ["HeyCodexKit"],
+            path: "Sources/hey-codex-selftest"
         ),
         .executableTarget(
             name: "HeyCodexApp",
-            dependencies: ["HeyClaudeKit"],
-            path: "Sources/HeyClaudeApp",
-            exclude: [
-                "AccessibilityPermission.swift",
-                "CommandExecutorHolder.swift",
-                "Island",
-                "LoginItem.swift",
-                "Onboarding",
-                "Preferences",
-                "PushToTalkController.swift",
-                "SystemSettingsLink.swift",
-                "WakePhraseEnrollmentWindowController.swift"
-            ],
+            dependencies: ["HeyCodexKit"],
+            path: "Sources/HeyCodexApp",
             sources: [
                 "AppController.swift",
                 "FirstRunSetupWindowController.swift",
-                "HeyClaudeApp.swift",
+                "HeyCodexApp.swift",
                 "SettingsWindowController.swift",
+                "WakePhraseEnrollmentWindowController.swift",
                 "WakeWordEngineHolder.swift"
             ]
         ),
         .testTarget(
-            name: "HeyClaudeKitTests",
-            dependencies: ["HeyClaudeKit"],
-            path: "Tests/HeyClaudeKitTests",
-            exclude: [
-                "AppStateTests.swift",
-                "CommandExecutorTests.swift",
-                "CommandRegistryTests.swift",
-                "CommandTests.swift",
-                "EditorRoutingTests.swift",
-                "IdeLockfileReaderTests.swift",
-                "IslandModelTests.swift",
-                "LauncherEscapingTests.swift",
-                "ManualCaptureFlagTests.swift",
-                "MascotCatalogTests.swift",
-                "MascotGridTests.swift",
-                "ParakeetTranscriberTests.swift",
-                "PushToTalkKeyTests.swift",
-                "RecentActionsTests.swift",
-                "SettingsStoreTests.swift",
-                "TerminalLauncherTests.swift",
-                "WakeWordEngineTests.swift"
-            ],
+            name: "HeyCodexKitTests",
+            dependencies: ["HeyCodexKit"],
+            path: "Tests/HeyCodexKitTests",
             sources: [
                 "CodexSettingsTests.swift",
                 "CaptureSessionTests.swift",

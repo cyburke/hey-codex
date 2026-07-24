@@ -17,7 +17,9 @@ Do not ask a tester to run a Voice check until the automated gates below pass.
 4. **Foreground activation:** with ChatGPT itself frontmost, one “Hey Codex” opens Voice.
 5. **User-opened session:** open Voice yourself with the hotkey, then say “Hey Codex”; Voice must stay open.
 6. **Self re-arm:** close Voice in ChatGPT’s own panel (or with the hotkey); within about a second Hey Codex returns to armed/listening with nothing spoken.
-7. **Explicit end:** choose **End ChatGPT Voice & Re-arm** from Hey Codex’s menu; Voice ends and Hey Codex returns to armed/listening.
-8. **No hidden off state:** while Hey Codex is running, the menu must not offer a Stop or Pause listener action. Quitting the app is the only way to stop the listener.
+7. **Explicit end:** choose **End Voice Session** from Hey Codex’s menu; Voice ends and Hey Codex returns to armed/listening.
+8. **Custom wake phrase:** choose **Use My Own Wake Phrase…**, enroll a multi-word phrase, and confirm the new phrase wakes Voice and the old one no longer does. Then choose **Back to “Hey Codex”** and confirm the default works again.
+9. **Enrollment gives the microphone back:** after enrolling (and after cancelling mid-enrollment by closing the window), the menu must return to listening without relaunching the app.
+10. **No hidden off state:** while Hey Codex is running, the menu must not offer a Stop or Pause listener action. Quitting the app is the only way to stop the listener.
 
 Record the exact ChatGPT desktop version and the pass/fail result for each gate before any public release decision.

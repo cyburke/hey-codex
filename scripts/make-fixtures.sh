@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FX="$ROOT/Tests/HeyClaudeKitTests/Fixtures"
+FX="$ROOT/Tests/HeyCodexKitTests/Fixtures"
 mkdir -p "$FX"
 
 gen() {  # gen <name> <text>
