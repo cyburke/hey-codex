@@ -37,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var readyBannerUntil: Date?
     private var previousSetupComplete = false
     private var bannerTimer: Timer?
+    /// Shown the moment a wake phrase is heard. Without it the user says the
+    /// phrase, the green prompt vanishes, and nothing visibly acknowledges that
+    /// anything was heard at all.
+    private var wakeBannerUntil: Date?
+    private var wakeBannerTimer: Timer?
+    private var previousStatus: AppController.Status?
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
@@ -68,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) { refreshMenu() }
 
     private func refreshMenu() {
+        noticeWakeIfStarting()
         menu.removeAllItems()
         let state = controller.setupState
 
@@ -183,18 +190,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // An icon alone cannot say "you still need to do something here", and a
         // lone symbol among a dozen menu bar symbols goes unnoticed. During
         // setup the item carries bracketed, coloured text instead.
+        // Numbered steps so progress is visible from the menu bar alone. After
+        // granting the microphone the label has to visibly change, or it looks
+        // like nothing happened.
         let label: String
         let tint: NSColor?
-        if !state.isComplete {
-            label = "<Set up Hey Codex>"
+        switch state {
+        case .needsMicrophone:
+            label = "<Set up Hey Codex: step 1 of 2>"
             tint = .systemOrange
-        } else if let until = readyBannerUntil, Date() < until {
-            label = "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D}>"
-            tint = .systemGreen
-        } else {
-            label = ""
-            tint = nil
-            readyBannerUntil = nil
+        case .microphoneBlocked:
+            label = "<Microphone blocked: step 1 of 2>"
+            tint = .systemRed
+        case .needsAccessibility:
+            label = "<Set up Hey Codex: step 2 of 2>"
+            tint = .systemOrange
+        case .accessibilityPendingRelaunch:
+            label = "<Finishing setup...>"
+            tint = .systemOrange
+        case .ready:
+            if let until = wakeBannerUntil, Date() < until {
+                label = "<Opening ChatGPT Voice...>"
+                tint = .systemBlue
+            } else if let until = readyBannerUntil, Date() < until {
+                label = "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D} to start>"
+                tint = .systemGreen
+            } else {
+                label = ""
+                tint = nil
+                readyBannerUntil = nil
+                wakeBannerUntil = nil
+            }
         }
 
         let name: String
@@ -237,15 +263,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Hold "Say “Hey Codex”" in the menu bar for long enough to be read, then
     /// go back to the quiet icon.
     private func announceReady() {
-        readyBannerUntil = Date().addingTimeInterval(12)
+        readyBannerUntil = Date().addingTimeInterval(20)
         bannerTimer?.invalidate()
-        bannerTimer = Timer.scheduledTimer(withTimeInterval: 12.5, repeats: false) { [weak self] _ in
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: 20.5, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.readyBannerUntil = nil
                 self?.refreshMenu()
             }
         }
         refreshMenu()
+    }
+
+    /// Turn "the shortcut is being sent" into something the user can see.
+    private func noticeWakeIfStarting() {
+        let status = controller.status
+        defer { previousStatus = status }
+        guard status == .activating, previousStatus != .activating else { return }
+        readyBannerUntil = nil
+        wakeBannerUntil = Date().addingTimeInterval(4)
+        wakeBannerTimer?.invalidate()
+        wakeBannerTimer = Timer.scheduledTimer(withTimeInterval: 4.2, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.wakeBannerUntil = nil
+                self?.refreshMenu()
+            }
+        }
     }
 
     private func startSetupPolling() {
