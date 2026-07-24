@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         let window = settingsWindow ?? SettingsWindowController(controller: controller)
+        window.onChangeWakePhrase = { [weak self] in self?.enrollWakePhrase() }
         settingsWindow = window
         window.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)

@@ -18,6 +18,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// Whether the wake listener was running when enrollment began, so it can
     /// be put back exactly as it was.
     private var resumeListening = false
+    private var presetPicker: NSPopUpButton?
 
     init(controller: AppController, initialPhrase: String, finished: @escaping () -> Void) {
         self.controller = controller
@@ -48,8 +49,19 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         title.font = .systemFont(ofSize: 19, weight: .semibold)
         root.addArrangedSubview(title)
         root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Choose a phrase, then say it three times. The recordings are processed on this Mac to create your local wake-word model."))
-        phraseField.widthAnchor.constraint(equalToConstant: 330).isActive = true
-        root.addArrangedSubview(phraseField)
+        let presets = NSPopUpButton(frame: .zero, pullsDown: false)
+        presets.addItems(withTitles: WakePhrase.presets)
+        presets.addItem(withTitle: "Custom…")
+        let current = phraseField.stringValue
+        presets.selectItem(withTitle: WakePhrase.presets.contains(current) ? current : "Custom…")
+        presets.target = self
+        presets.action = #selector(choosePreset(_:))
+        self.presetPicker = presets
+        phraseField.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        let phraseRow = NSStackView(views: [phraseField, presets])
+        phraseRow.orientation = .horizontal
+        phraseRow.spacing = 10
+        root.addArrangedSubview(phraseRow)
         detail.textColor = .secondaryLabelColor
         detail.stringValue = "“Hey Codex” is the default. “Hey ChatGPT” and “Hey Jarvis” are presets. Multiword phrases are less likely to trigger accidentally."
         detail.maximumNumberOfLines = 0
@@ -68,6 +80,14 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             buttons.addArrangedSubview(reset)
         }
         root.addArrangedSubview(buttons)
+    }
+
+    /// Suggestions only fill the field — every phrase, preset or not, still has
+    /// to be recorded. The keyword comes from this user's voice, so there is no
+    /// such thing as a preset that skips enrollment.
+    @objc private func choosePreset(_ sender: NSPopUpButton) {
+        guard let title = sender.titleOfSelectedItem, title != "Custom…" else { return }
+        phraseField.stringValue = title
     }
 
     @objc private func start() {
@@ -173,7 +193,8 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                     try self.controller.completeEnrollment(phrase: phrase,
                                                           keywordLines: result.keywordLines,
                                                           threshold: result.threshold)
-                    self.progress.stringValue = "Saved locally."
+                    self.confirm(title: "“\(phrase)” is now your wake phrase",
+                                 body: "Hey Codex is listening for it now. Change it any time from the menu bar.")
                     self.complete()
                 } catch {
                     self.progress.stringValue = error.localizedDescription
@@ -187,12 +208,23 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     @objc private func resetToDefault() {
         do {
             try controller.resetWakePhraseToDefault()
-            progress.stringValue = "Back to the default “Hey Codex.”"
             phraseField.stringValue = "Hey Codex"
+            confirm(title: "Back to “Hey Codex”",
+                    body: "Your enrolled phrase was removed and the default is active again.")
             complete()
         } catch {
             progress.stringValue = error.localizedDescription
         }
+    }
+
+    /// Enrollment ends by closing the window, so a status label would only
+    /// flash past. Say plainly what happened, in something the user dismisses.
+    private func confirm(title: String, body: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.addButton(withTitle: "Done")
+        alert.runModal()
     }
 
     private func complete() {
