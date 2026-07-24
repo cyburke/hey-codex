@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="Resources/hero.png" alt="Hey Codex" width="640">
-
 # Hey Codex
 
 **Say "Hey Codex." ChatGPT Voice opens. Keep your hands where they are.**

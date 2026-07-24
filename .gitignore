@@ -44,3 +44,6 @@ HeyCodex-notarize.zip
 .superpowers/
 .claude/
 HeyClaude.app/
+
+# Internal review notes: local paths, signing identity, build hashes.
+EXTERNAL_REVIEW_BRIEF.md
