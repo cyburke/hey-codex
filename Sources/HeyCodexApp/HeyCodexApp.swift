@@ -181,29 +181,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshStatusIcon(_ state: SetupState) {
         // An icon alone cannot say "you still need to do something here", and a
-        // symbol among a dozen other menu bar symbols is not noticeable. While
-        // setup is unfinished the item carries readable text instead.
+        // lone symbol among a dozen menu bar symbols goes unnoticed. During
+        // setup the item carries bracketed, coloured text instead.
         let label: String
+        let tint: NSColor?
         if !state.isComplete {
-            label = "Set up Hey Codex"
+            label = "<Set up Hey Codex>"
+            tint = .systemOrange
         } else if let until = readyBannerUntil, Date() < until {
-            label = "Say “\(controller.settings.wakePhrase)”"
+            label = "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D}>"
+            tint = .systemGreen
         } else {
             label = ""
+            tint = nil
             readyBannerUntil = nil
-        }
-        if let button = statusItem.button {
-            button.title = label
-            button.font = .systemFont(ofSize: 13, weight: .medium)
-            // Without an explicit position the image and title fight for the
-            // same space and the text loses.
-            button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
-            button.imageHugsTitle = true
         }
 
         let name: String
         if !state.isComplete {
-            name = "exclamationmark.circle"
+            name = "exclamationmark.circle.fill"
         } else if !controller.isListening {
             name = "pause.circle"
         } else if controller.isArmed {
@@ -211,15 +207,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             name = "lock.fill"
         }
-        if let image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex") {
-            image.isTemplate = true
-            statusItem.button?.image = image
+
+        guard let button = statusItem.button else { return }
+        button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
+        button.imageHugsTitle = true
+        if let tint {
+            button.attributedTitle = NSAttributedString(string: " " + label, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: tint,
+            ])
+        } else {
+            button.attributedTitle = NSAttributedString(string: "")
+            button.title = ""
+        }
+
+        if var image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex") {
+            if let tint,
+               let coloured = image.withSymbolConfiguration(.init(paletteColors: [tint])) {
+                // A template image renders monochrome, so colour needs the flag off.
+                image = coloured
+                image.isTemplate = false
+            } else {
+                image.isTemplate = true
+            }
+            button.image = image
         }
     }
 
-    /// While setup is outstanding the state can change in System Settings, where
-    /// the app gets no notification. Poll so the menu is already correct the
-    /// moment the user looks at it again.
     /// Hold "Say “Hey Codex”" in the menu bar for long enough to be read, then
     /// go back to the quiet icon.
     private func announceReady() {
