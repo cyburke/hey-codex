@@ -5,10 +5,10 @@ import Foundation
 /// (mock launcher, runShell, openURL) and the real defaults live in one place.
 ///
 /// `execute` reports its outcome through a `completion` closure rather than a
-/// synchronous `throws`: launch failures arrive on two clocks — terminal/editor
+/// synchronous `throws`: launch failures arrive on two clocks - terminal/editor
 /// failures are synchronous, but deep-link success is best-effort. One `Result`
 /// channel captures both. The typed `LaunchFailure` crosses to the caller intact
-/// (it's `Sendable`) so the UI can show a specific, actionable message — never a
+/// (it's `Sendable`) so the UI can show a specific, actionable message - never a
 /// bare `Bool`.
 public struct CommandExecutor: Sendable {
     private let settings: Settings
@@ -39,7 +39,7 @@ public struct CommandExecutor: Sendable {
                 completion(launchTerminal(kind: kind, template: template, prompt: prompt))
             case .editor(let editor):
                 // Editor targets require the tool's integration data. Missing data
-                // is a defensive (backfilled) case — fail honestly, no fallback.
+                // is a defensive (backfilled) case - fail honestly, no fallback.
                 guard let integration = command.editorIntegration else {
                     completion(.failure(.editorIntegrationMissing(editor)))
                     return
@@ -49,7 +49,7 @@ public struct CommandExecutor: Sendable {
                                         : .failure(.editorDeepLinkRejected(editor)))
             }
         case .openApp(let bundleID):
-            // Legacy path — the "open Claude desktop app" command was removed.
+            // Legacy path - the "open Claude desktop app" command was removed.
             // Retained as a decodable case for backward compat with old settings
             // files; any that survive migration fail here rather than crashing.
             completion(.failure(.appNotFound(bundleID)))
@@ -78,14 +78,14 @@ public struct CommandExecutor: Sendable {
                 completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
                 return
             }
-            // Always post to the system HID tap, never to ChatGPT's pid — even
+            // Always post to the system HID tap, never to ChatGPT's pid - even
             // when ChatGPT is frontmost. ChatGPT registers the Voice shortcut
             // through Electron's globalShortcut, which on macOS is Carbon
             // `RegisterEventHotKey` (the Codex Framework binary imports it).
             // Carbon hot keys are dispatched by the window server off the system
             // event stream; `CGEvent.postToPid` injects straight into a process's
             // own event queue and bypasses that dispatch, so the hot key handler
-            // never fires. Focus is irrelevant to a Carbon hot key — the same
+            // never fires. Focus is irrelevant to a Carbon hot key - the same
             // global post reaches it whether or not ChatGPT is in front.
             func post(_ event: CGEvent) {
                 event.post(tap: .cghidEventTap)
@@ -180,7 +180,7 @@ public struct CommandExecutor: Sendable {
         p.arguments = ["-lc", script]
         try p.run()
     }
-    /// Opens the editor deep link. Returns whether a handler claimed the scheme —
+    /// Opens the editor deep link. Returns whether a handler claimed the scheme , 
     /// best-effort (the OS doesn't report whether the editor honored the link).
     public static func defaultOpenURL(_ url: URL) -> Bool {
         NSWorkspace.shared.open(url)

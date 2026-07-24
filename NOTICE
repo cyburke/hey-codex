@@ -1,6 +1,6 @@
 Hey Codex
-Copyright (c) 2026 Eliott Burke (https://github.com/cyburke) — modifications
-Copyright (c) 2026 littlemelon77 — original Hey Claude work
+Copyright (c) 2026 Eliott Burke (https://github.com/cyburke) - modifications
+Copyright (c) 2026 littlemelon77 - original Hey Claude work
 
 Hey Codex is a modified GPL-3.0 fork of littlemelon77/hey-claude:
   https://github.com/littlemelon77/hey-claude
@@ -15,14 +15,14 @@ It includes and/or builds upon the following third-party components, each under
 its own license:
 
 ------------------------------------------------------------------------------
-sherpa-onnx — https://github.com/k2-fsa/sherpa-onnx
+sherpa-onnx - https://github.com/k2-fsa/sherpa-onnx
   Copyright (c) 2023 Xiaomi Corporation
   Licensed under the Apache License, Version 2.0.
   The Swift binding in Sources/HeyCodexKit/SherpaOnnx.swift is adapted from the
   upstream project. The prebuilt static xcframework is fetched at build time by
   scripts/fetch-sherpa.sh and is not redistributed in this repository.
 
-ONNX Runtime — https://github.com/microsoft/onnxruntime
+ONNX Runtime - https://github.com/microsoft/onnxruntime
   Copyright (c) Microsoft Corporation
   Licensed under the MIT License.
   Linked into the sherpa-onnx static library (see scripts/fetch-sherpa.sh).
@@ -33,7 +33,7 @@ in this repository, but the KWS model IS redistributed inside release .app bundl
     releases under its upstream license. Bundled into HeyCodex.app.
   - NeMo Parakeet TDT, same source. Optional developer-only asset; not bundled.
 
-General Sans (font) — https://www.fontshare.com/fonts/general-sans
+General Sans (font) - https://www.fontshare.com/fonts/general-sans
   Copyright (c) 2017-2021 Indian Type Foundry
   ITF Free Font License. NOT redistributed here (the license forbids sharing the
   font files); the app falls back to the system font when the fonts are absent.

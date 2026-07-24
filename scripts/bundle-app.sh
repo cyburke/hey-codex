@@ -26,7 +26,7 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # A release bundle must be self-contained: use a physical copy, never a source
 # checkout symlink. Models are fetched separately by scripts/fetch-models.sh.
 #
-# Copy only what the shipped app loads — the keyword spotter and its keyword
+# Copy only what the shipped app loads - the keyword spotter and its keyword
 # list. The Parakeet ASR model in Models/ is a development asset for the
 # selftest decode probes; Hey Codex never transcribes, so bundling it added
 # 631 MB to a download for a capability the product does not have. Anything the
@@ -35,7 +35,7 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # Within the wake-word model, copy only the four files WakeWordEngine opens.
 # The released model directory also ships int8 variants, bpe.model, test WAVs,
 # and a README; none are loaded at runtime. Keep this list in sync with
-# WakeWordEngine.init — a missing file fails loudly there with .missingModelFile.
+# WakeWordEngine.init - a missing file fails loudly there with .missingModelFile.
 KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
 KWS_FILES=(
     "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"

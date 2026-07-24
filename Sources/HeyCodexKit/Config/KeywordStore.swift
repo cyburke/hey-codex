@@ -33,7 +33,7 @@ public final class KeywordStore {
     }
 
     /// Discard a stored enrollment so the caller falls back to the bundled
-    /// keyword. Absent file is success — the desired end state already holds.
+    /// keyword. Absent file is success - the desired end state already holds.
     public func removeIfPresent() throws {
         guard exists else { return }
         try FileManager.default.removeItem(at: fileURL)

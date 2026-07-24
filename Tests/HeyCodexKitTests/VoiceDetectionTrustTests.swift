@@ -10,7 +10,7 @@ final class VoiceDetectionTrustTests: XCTestCase {
         let trust = VoiceDetectionTrust()
         XCTAssertTrue(trust.observedPanel(), "first proof must be persisted")
         XCTAssertTrue(trust.isProven)
-        XCTAssertFalse(trust.observedPanel(), "already proven — nothing new to persist")
+        XCTAssertFalse(trust.observedPanel(), "already proven - nothing new to persist")
     }
 
     func test_unprovenDetectorNeverRevokesItself() {

@@ -3,7 +3,7 @@
 # that matches it. Run AFTER build-release.sh (or build-signed-local.sh).
 #
 # The cask is printed rather than written because its sha256 must describe the
-# exact zip that gets uploaded — generating it from a guessed URL is how casks
+# exact zip that gets uploaded - generating it from a guessed URL is how casks
 # end up pointing at a checksum nobody ever verified.
 set -euo pipefail
 

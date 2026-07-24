@@ -8,7 +8,7 @@ import HeyCodexKit
 /// shortcut. It never transcribes recordings.
 ///
 /// It does read one fact about ChatGPT: whether ChatGPT's own process currently
-/// owns a floating window that is on screen — i.e. whether the Voice panel is
+/// owns a floating window that is on screen - i.e. whether the Voice panel is
 /// up. That single bit is what lets the helper mirror the keyboard shortcut
 /// honestly: don't toggle Voice off when the user opened it themselves, re-arm
 /// when Voice ends by any means, and never show a locked icon for a Voice
@@ -25,7 +25,7 @@ final class AppController {
             case .starting: return "Starting local listener…"
             case .listening: return "Listening locally"
             case .activating: return "Sending Voice shortcut…"
-            case .latched: return "Voice active — close it in ChatGPT when finished"
+            case .latched: return "Voice active - close it in ChatGPT when finished"
             case .failed(let message): return message
             }
         }
@@ -114,7 +114,7 @@ final class AppController {
                 keywordsScore: launchSettings.wakeKeywordsScore))
             let mic = try AudioCapture(onFrame: { [weak self] frame in
                 // Only one phrase exists. Ending a Voice session is ChatGPT's
-                // own job — its panel closes itself, and the panel watch re-arms
+                // own job - its panel closes itself, and the panel watch re-arms
                 // this helper when it does. A wake heard while Voice is already
                 // up is deliberately ignored rather than toggled.
                 guard activation.isArmed, wake.feed(frame), activation.beginLaunch() else { return }
@@ -140,7 +140,7 @@ final class AppController {
     }
 
     /// The wake engine is not fed while latched, so its streaming decoder holds
-    /// state from just before Voice opened — often the tail of the very "Hey
+    /// state from just before Voice opened - often the tail of the very "Hey
     /// Codex" that opened it. Clear it on every re-arm so a stale buffer cannot
     /// fire the moment listening resumes.
     private func rearmWakeEngine() { wake?.reset() }
@@ -206,7 +206,7 @@ final class AppController {
     }
 
     /// The menu-bar escape hatch. Voice normally ends in ChatGPT's own panel,
-    /// but this stays as the manual way out — it is the only recovery when panel
+    /// but this stays as the manual way out - it is the only recovery when panel
     /// detection is unproven and the helper is holding a latch it cannot verify.
     func endVoiceSession() {
         guard activation.beginClose() else { return }
@@ -299,7 +299,7 @@ final class AppController {
     /// Unlike the other settings paths, this one is reached *from enrollment*,
     /// which deliberately stopped the listener to take the microphone. A plain
     /// `if isListening` check is therefore always false here, so the listener
-    /// would stay down until the enrollment window finished closing — leaving
+    /// would stay down until the enrollment window finished closing - leaving
     /// the app deaf across the confirmation dialog and for the engine's warmup
     /// after it. Starting here instead means the new engine builds while the
     /// user is still reading the confirmation.
@@ -401,7 +401,7 @@ final class AppController {
             startPanelWatch()
             return
         }
-        // Never having seen a panel here means absence proves nothing — this
+        // Never having seen a panel here means absence proves nothing - this
         // ChatGPT build may not expose the signal at all. Behave exactly as the
         // helper did before detection existed: assume the post landed.
         guard trust.isProven else {
@@ -432,8 +432,8 @@ final class AppController {
         return panel.isPanelVisible() == visible
     }
 
-    /// Watches for Voice ending by any means — the keyboard shortcut, clicking
-    /// away, or ChatGPT closing it — and re-arms the wake phrase. Without this
+    /// Watches for Voice ending by any means - the keyboard shortcut, clicking
+    /// away, or ChatGPT closing it - and re-arms the wake phrase. Without this
     /// the helper stays latched with no spoken way out, which is exactly the
     /// state where "Hey Codex" appears to do nothing.
     private func startPanelWatch() {

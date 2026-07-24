@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // With detection working, End Voice Session already handles an
             // already-closed session; offering both would be a coin flip.
             if !controller.isVoiceStateVerified {
-                menu.addItem(item("Voice Already Closed — Reset", #selector(rearmVoice)))
+                menu.addItem(item("Voice Already Closed - Reset", #selector(rearmVoice)))
             }
             menu.addItem(.separator())
         }

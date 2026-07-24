@@ -13,7 +13,7 @@ if [ ! -d "$KWS" ]; then
   tar xjf "${KWS}.tar.bz2" && rm "${KWS}.tar.bz2"
 fi
 
-# --- STT stage: offline Parakeet TDT (English, int8) — OPTIONAL ---
+# --- STT stage: offline Parakeet TDT (English, int8) - OPTIONAL ---
 # Hey Codex never transcribes; this 631 MB model exists only for the selftest
 # decode probes. Building and running the app does not need it, so it is opt-in
 # rather than a cost every person who clones the repo pays by default.

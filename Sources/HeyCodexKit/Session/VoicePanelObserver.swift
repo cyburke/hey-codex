@@ -5,7 +5,7 @@ import Foundation
 /// One ChatGPT-owned window reduced to the only three facts this helper reads.
 ///
 /// Deliberately *not* included: position, size, title, or any window contents.
-/// Those are the brittle properties — OpenAI can move, resize, restyle, or
+/// Those are the brittle properties - OpenAI can move, resize, restyle, or
 /// rename the Voice panel without changing whether ChatGPT's own process owns a
 /// floating window that is currently on screen.
 public struct VoiceWindow: Equatable, Sendable {
@@ -23,8 +23,8 @@ public struct VoiceWindow: Equatable, Sendable {
 /// Reads whether ChatGPT's Voice panel is currently on screen.
 ///
 /// ChatGPT exposes no session-state API, but Voice runs in a floating panel
-/// owned by ChatGPT's own process. The panel is persistent — it is not created
-/// and destroyed per session, it toggles between on screen and off screen — so
+/// owned by ChatGPT's own process. The panel is persistent - it is not created
+/// and destroyed per session, it toggles between on screen and off screen - so
 /// the signal is a visibility check, never a "did a new window appear" check.
 ///
 /// This needs no permission beyond what the app already holds: window owner,

@@ -7,7 +7,7 @@ public enum TerminalKind: String, Codable, CaseIterable, Sendable {
     case ghostty        = "Ghostty"
     case cursorTerminal = "Cursor Terminal"
 
-    /// App bundle identifier — for availability checks and app-icon lookup.
+    /// App bundle identifier - for availability checks and app-icon lookup.
     public var bundleID: String {
         switch self {
         case .terminalApp:    return "com.apple.Terminal"
@@ -38,7 +38,7 @@ public struct Settings: Codable, Equatable, Sendable {
     public var cooldownSeconds: Double            // ignore re-fires within this window
     public var maxUtteranceSeconds: Double        // safety cap on one utterance; the
                                                   // silence endpoint is the real
-                                                  // terminator — this only bounds a clip
+                                                  // terminator - this only bounds a clip
                                                   // when the VAD never detects silence
     public var endpointSilenceMs: Int             // trailing silence that marks end-of-
                                                   // speech (you stopped talking)

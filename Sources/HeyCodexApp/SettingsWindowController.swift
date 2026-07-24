@@ -64,10 +64,10 @@ final class SettingsWindowController: NSWindowController {
 
         // Shortcut ---------------------------------------------------------
         root.addArrangedSubview(sectionHeader("ChatGPT Voice hotkey"))
-        root.addArrangedSubview(body("This must match the Voice chat hotkey in ChatGPT exactly — Hey Codex presses it for you."))
+        root.addArrangedSubview(body("Hey Codex presses this hotkey for you, so it must match the Voice chat hotkey in ChatGPT exactly."))
         // Modifiers and the key live on separate rows. Inline, the "Command"
         // checkbox sat flush against the "Key" field label and the row read as
-        // "Command Key" — a misparse this window can least afford.
+        // "Command Key" - a misparse this window can least afford.
         let modifiers = NSStackView(views: [control, option, command])
         modifiers.orientation = .horizontal
         modifiers.spacing = 14
@@ -177,7 +177,7 @@ final class SettingsWindowController: NSWindowController {
         notice.stringValue = text
     }
 
-    /// Section heading. Primary colour — headings must never be gray.
+    /// Section heading. Primary colour - headings must never be gray.
     private func sectionHeader(_ text: String) -> NSTextField {
         let field = NSTextField(labelWithString: text)
         field.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -196,7 +196,7 @@ final class SettingsWindowController: NSWindowController {
         return field
     }
 
-    /// Genuinely secondary asides only — short, skippable, and never carrying
+    /// Genuinely secondary asides only - short, skippable, and never carrying
     /// information the user needs to complete a task.
     private func hint(_ text: String) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
@@ -212,7 +212,7 @@ final class SettingsWindowController: NSWindowController {
         super.showWindow(sender)
     }
 
-    /// A separator in a vertical NSStackView needs BOTH dimensions pinned — with
+    /// A separator in a vertical NSStackView needs BOTH dimensions pinned - with
     /// no height constraint it lays out at zero and never appears.
     private func rule() -> NSBox {
         let box = NSBox()

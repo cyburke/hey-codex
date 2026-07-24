@@ -92,13 +92,13 @@ func checkVoiceShortcut() -> Bool {
 /// Live probe: proves the Core Graphics window bridge actually decodes, which
 /// unit tests of the pure rule cannot show. A silent cast failure here would
 /// look exactly like "Voice never opens", so it is worth checking directly.
-/// Not part of `all` — it reads live window-server state and needs a GUI session.
+/// Not part of `all` - it reads live window-server state and needs a GUI session.
 func probeVoicePanel() -> Bool {
     run("voice.panelObserverLive") { c in
         let windows = VoicePanelObserver.currentWindows()
         print("  [diag] window bridge decoded \(windows.count) window(s)")
         c.assert(!windows.isEmpty,
-                 "window list came back empty — the CGWindow bridge or a GUI session is missing")
+                 "window list came back empty - the CGWindow bridge or a GUI session is missing")
         let pid = VoicePanelObserver.chatGPTProcessIdentifier()
         print("  [diag] ChatGPT pid: \(pid.map(String.init) ?? "not running")")
         if let pid {
@@ -222,7 +222,7 @@ func checkWakePositive() -> Bool {
 }
 
 // Diagnostic sweep: prints detection across thresholds + clips. Not a pass/fail
-// gate — used to calibrate `wakeThreshold` honestly. One engine per threshold
+// gate - used to calibrate `wakeThreshold` honestly. One engine per threshold
 // (model load is ~0.3s), all clips reused.
 func probeWake() -> Bool {
     print("PROBE wake threshold sweep")
@@ -285,7 +285,7 @@ func probeMicDecode() -> Bool {
     }
 
     let rounds = 5, windowSec = 2.5
-    print("PROBE mic-decode — say \"hey codex\" once per round (\(rounds) rounds).")
+    print("PROBE mic-decode - say \"hey codex\" once per round (\(rounds) rounds).")
     let wake = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: keywordsFile,
                                    keywordsThreshold: 0.25, keywordsScore: 2.0)
     for round in 1...rounds {
@@ -309,11 +309,11 @@ func probeMicDecode() -> Bool {
     return true
 }
 
-// Full wake enrollment over 3 live utterances — the real algorithm end to end,
+// Full wake enrollment over 3 live utterances - the real algorithm end to end,
 // dry-run (does NOT overwrite your per-user keyword). Run: `… enroll`.
 func probeEnroll() -> Bool {
     let kws = kwsDir   // capture locally so the @Sendable closures don't touch globals
-    print("PROBE enroll — 3 live utterances (2 isolated + 1 natural).")
+    print("PROBE enroll - 3 live utterances (2 isolated + 1 natural).")
 
     func recordOne(_ label: String) -> [Float] {
         print("  \(label)")
@@ -329,9 +329,9 @@ func probeEnroll() -> Bool {
     }
 
     let samples: [WakeEnrollment.Sample] = [
-        .init(audio: recordOne("Isolated 1 — say \"Hey Claude\" NOW…"), kind: .isolated),
-        .init(audio: recordOne("Isolated 2 — say \"Hey Claude\" NOW…"), kind: .isolated),
-        .init(audio: recordOne("Natural — say \"Hey Claude\" and ask for something…"), kind: .natural),
+        .init(audio: recordOne("Isolated 1 - say \"Hey Claude\" NOW…"), kind: .isolated),
+        .init(audio: recordOne("Isolated 2 - say \"Hey Claude\" NOW…"), kind: .isolated),
+        .init(audio: recordOne("Natural - say \"Hey Claude\" and ask for something…"), kind: .natural),
     ]
 
     let enroll = WakeEnrollment(
@@ -346,7 +346,7 @@ func probeEnroll() -> Bool {
         })
 
     let r = enroll.enroll(samples: samples)
-    print("\n  === ENROLLMENT RESULT (dry run — not saved) ===")
+    print("\n  === ENROLLMENT RESULT (dry run - not saved) ===")
     print("  keyword lines:"); for l in r.keywordLines { print("    \(l)") }
     print("  threshold: \(r.threshold)")
     print("  all samples fire: \(r.allFired ? "✅ YES" : "❌ NO")")
@@ -361,7 +361,7 @@ func probeEnroll() -> Bool {
     return true
 }
 
-// DIAG 1 — audio sanity: transcribe the EXACT wake clip used by the wake test.
+// DIAG 1 - audio sanity: transcribe the EXACT wake clip used by the wake test.
 func probeTranscribeOnly() -> Bool {
     print("PROBE asr transcript of hey_claude_only")
     guard let samples = try? AudioSamples.load(fixture("hey_claude_only")),
@@ -373,7 +373,7 @@ func probeTranscribeOnly() -> Bool {
     return true
 }
 
-// DIAG 2 — boost sweep. keywords_score keeps the keyword path alive in the
+// DIAG 2 - boost sweep. keywords_score keeps the keyword path alive in the
 // beam when acoustic evidence is weak (a different lever than threshold). Sweep
 // it over the positive clip AND negative_speech so we can pick a value with
 // separation (fires on positive, quiet on negative). Threshold pinned low.
@@ -404,8 +404,8 @@ func probeBoostSweep() -> Bool {
 
 // MARK: - Threshold sweep (wake-sensitivity slider verification)
 
-/// Proves the `keywordsThreshold` parameter — what the Settings ▸ Voice
-/// sensitivity slider sets — actually gates firing. Sweeps from eager (low) to
+/// Proves the `keywordsThreshold` parameter - what the Settings ▸ Voice
+/// sensitivity slider sets - actually gates firing. Sweeps from eager (low) to
 /// strict (high) at the shipped boost; the positive clip should fire while the
 /// gate is below its achieved score and stop once the gate climbs past it. The
 /// shaded band [0.08 … 0.30] marks the slider's live range (see VoiceSection).
@@ -449,7 +449,7 @@ func checkTranscribe() -> Bool {
 }
 
 // Diagnostic (not a test): reproduces the app's exact routing for each
-// "hey claude" fixture — transcribe -> WakePrefixStripper -> CommandRegistry —
+// "hey claude" fixture - transcribe -> WakePrefixStripper -> CommandRegistry , 
 // to reveal which command a bare/coded/prompt utterance actually resolves to.
 // Mirrors VoiceSession.handle. Run: `swift run hey-codex-selftest route`.
 func probeRoute() -> Bool {
@@ -514,7 +514,7 @@ func probeEditorRoute() -> Bool {
     var ok = true
     ok = run("editor.deepLinkEncodesPrompt") { c in
         let url = DeepLinkBuilder.url(editor: .cursor, integration: .claudeCode,
-                                      prompt: "fix the bug — now 🚀")
+                                      prompt: "fix the bug - now 🚀")
         c.assertEqual(url.absoluteString,
             "cursor://anthropic.claude-code/open?prompt=fix%20the%20bug%20%E2%80%94%20now%20%F0%9F%9A%80")
     } && ok
@@ -569,7 +569,7 @@ func probeEditorRoute() -> Bool {
 
 // LIVE end-to-end: drives the REAL backend path (Command → CommandExecutor →
 // DeepLinkBuilder → NSWorkspace.open) to open Claude Code inside Cursor. Has a
-// real side effect, so it's never part of "all" — run it explicitly.
+// real side effect, so it's never part of "all" - run it explicitly.
 func probeEditorOpenLive(_ editor: EditorKind) -> Bool {
     let exec = CommandExecutor(settings: .default,
                                launcherFor: { _ in ProbeMockLauncher() })
@@ -577,13 +577,13 @@ func probeEditorOpenLive(_ editor: EditorKind) -> Bool {
                       kind: .runCLI(commandTemplate: "claude {prompt}"),
                       target: .editor(editor), acceptsPrompt: true,
                       editorIntegration: .claudeCode)
-    let prompt = "BACKEND TEST — opened via CommandExecutor, do not press enter"
+    let prompt = "BACKEND TEST - opened via CommandExecutor, do not press enter"
     print("  url = \(DeepLinkBuilder.url(editor: editor, integration: .claudeCode, prompt: prompt).absoluteString)")
     let outcome = ResultBox()
     exec.execute(cmd, prompt: prompt) { outcome.result = $0 }
     switch outcome.result {
     case .success:
-        print("OPENED  \(editor.rawValue) — check the editor for a Claude Code panel")
+        print("OPENED  \(editor.rawValue) - check the editor for a Claude Code panel")
         return true
     case .failure(let f):
         print("FAIL    \(f.localizedDescription)")
@@ -594,7 +594,7 @@ func probeEditorOpenLive(_ editor: EditorKind) -> Bool {
     }
 }
 
-// Claude-Code-only routing on the shipped defaults (pure — no models needed).
+// Claude-Code-only routing on the shipped defaults (pure - no models needed).
 func probeDefaultRouting() -> Bool {
     run("routing.claudeCodeOnlyDefaults") { c in
         let s = Settings.default
@@ -617,7 +617,7 @@ func probeDefaultRouting() -> Bool {
         c.assert(!s.commands.contains { $0.id == "claude-desktop" }, "claude-desktop should be gone")
 
         // Migration: a claude-code command persisted before `editorIntegration`
-        // existed must be backfilled — else an editor target falls back to a
+        // existed must be backfilled - else an editor target falls back to a
         // terminal. (The exact shape that shipped in users' settings.json.)
         let legacy = #"{"projectDirectory":"/tmp","preferredTarget":{"type":"editor","value":"Cursor"},"wakeKeywordsScore":2,"wakeKeywordsThreshold":0.25,"cooldownSeconds":2,"claudeExecutable":"claude","onboardingCompleted":true,"defaultCommandID":"claude-code","promptCommandID":"claude-code","commands":[{"acceptsPrompt":true,"id":"claude-code","kind":{"runCLI":{"commandTemplate":"claude {prompt}"}},"label":"Claude Code","triggers":["code"]}]}"#
         let migrated = try JSONDecoder().decode(Settings.self, from: Data(legacy.utf8))
@@ -633,7 +633,7 @@ func main() -> Int32 {
     let requested = CommandLine.arguments.dropFirst().first ?? "all"
     var allOK = true
 
-    // Explicit, side-effecting live checks — never part of "all".
+    // Explicit, side-effecting live checks - never part of "all".
     if requested == "editor-open-live" {
         let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
         let editor = EditorKind(rawValue: editorArg) ?? .cursor

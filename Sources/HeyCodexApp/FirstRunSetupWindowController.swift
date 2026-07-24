@@ -95,7 +95,7 @@ final class FirstRunSetupWindowController: NSWindowController, NSWindowDelegate 
         primary.target = self
         primary.action = #selector(openMicrophoneSettings)
         primary.isHidden = false
-        secondary.title = "I enabled it — Check again"
+        secondary.title = "I enabled it - Check again"
         secondary.target = self
         secondary.action = #selector(showCurrentStepFromUserAction)
         secondary.isHidden = false
@@ -154,7 +154,7 @@ final class FirstRunSetupWindowController: NSWindowController, NSWindowDelegate 
             detail.stringValue = "macOS displays this narrow keyboard-event permission in Accessibility. Enable Hey Codex there, return here, and try again."
             primary.title = "Open Accessibility Settings"
             primary.action = #selector(openVoiceSettings)
-            secondary.title = "I enabled it — Check again"
+            secondary.title = "I enabled it - Check again"
             secondary.target = self
             secondary.action = #selector(requestVoicePermission)
             secondary.isHidden = false
@@ -170,7 +170,7 @@ final class FirstRunSetupWindowController: NSWindowController, NSWindowDelegate 
             self.primary.isEnabled = true
             switch result {
             case .success:
-                self.detail.stringValue = "Shortcut sent. If ChatGPT Voice opened, you are all set — choose Done. If nothing happened, the hotkey in ChatGPT does not match \(self.controller.settings.voiceShortcut.displayString)."
+                self.detail.stringValue = "Shortcut sent. If ChatGPT Voice opened, you are all set - choose Done. If nothing happened, the hotkey in ChatGPT does not match \(self.controller.settings.voiceShortcut.displayString)."
                 self.primary.isHidden = true
                 self.secondary.title = "Done"
                 self.secondary.target = self

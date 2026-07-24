@@ -2,23 +2,13 @@ import Foundation
 
 /// Decides whether Voice-panel detection may be believed on this machine.
 ///
-/// Detection is an observation of another app's window structure, so it must
-/// never be a hard dependency. This type keeps the helper's behavior strictly
-/// monotonic:
+/// Every install starts unproven, where detection only learns and behavior
+/// matches the pre-detection helper: post the shortcut and latch. Absence of a
+/// panel means nothing until one has actually been seen here. After that a
+/// detector that misses `failureBudget` launches in a row revokes itself.
 ///
-/// - **Unproven** (the state every install starts in): detection is used only
-///   to *learn*. Behavior is exactly the pre-detection behavior — post the
-///   shortcut and latch. A helper that has never seen a Voice panel never
-///   claims one is missing.
-/// - **Proven**: the panel has been observed at least once here, so this build
-///   of ChatGPT does expose the signal. Only now may absence mean anything.
-/// - **Trust lost**: if a proven detector then misses several launches in a row,
-///   ChatGPT probably changed. Fall back to unproven behavior rather than
-///   fighting it, and let the UI say so.
-///
-/// The consequence worth stating plainly: if OpenAI restructures the Voice panel,
-/// Hey Codex degrades to the simple fire-and-latch behavior it had before. It
-/// does not break.
+/// So if OpenAI restructures the Voice panel, Hey Codex falls back to
+/// fire-and-latch rather than breaking.
 public final class VoiceDetectionTrust: @unchecked Sendable {
     /// How many consecutive unconfirmed launches revoke a proven detector.
     /// Small enough to recover quickly, large enough to survive one slow launch

@@ -87,7 +87,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         refreshPendingState()
     }
 
-    /// Suggestions only fill the field — every phrase, preset or not, still has
+    /// Suggestions only fill the field - every phrase, preset or not, still has
     /// to be recorded. The keyword comes from this user's voice, so there is no
     /// such thing as a preset that skips enrollment.
     @objc private func choosePreset(_ sender: NSPopUpButton) {
@@ -98,7 +98,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
 
     func controlTextDidChange(_ obj: Notification) { refreshPendingState() }
 
-    /// Picking a suggestion changes nothing on its own — the phrase only becomes
+    /// Picking a suggestion changes nothing on its own - the phrase only becomes
     /// real after it is recorded. Say so the moment the field diverges from the
     /// phrase that is actually active, so nobody closes the window believing
     /// they switched.
@@ -110,7 +110,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         startButton.title = pending ? "Record “\(typed)” three times" : "Start three recordings"
         progress.textColor = pending ? .controlAccentColor : .labelColor
         progress.stringValue = pending
-            ? "“\(typed)” is not active yet — record it to switch."
+            ? "“\(typed)” is not active yet. Record it to switch."
             : "Ready to record"
     }
 
@@ -162,7 +162,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 guard let self, self.recorder === recorder else { return }
                 self.progress.textColor = .labelColor
-                self.progress.stringValue = "Recording \(index) of 3 — say “\(phrase)” now"
+                self.progress.stringValue = "Recording \(index) of 3 - say “\(phrase)” now"
             }
         } catch {
             progress.textColor = .systemRed
@@ -186,7 +186,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 } else {
                     self.progress.textColor = .systemOrange
                     self.progress.stringValue =
-                        "Didn't catch that one — say the whole phrase at a normal pace, then pause."
+                        "Didn't catch that one. Say the whole phrase at a normal pace, then pause."
                 }
             }
             try? await Task.sleep(for: .milliseconds(500))
@@ -235,7 +235,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                                                           threshold: result.threshold)
                     // The sweep takes the highest threshold that fires all three
                     // samples, so landing on the loosest rung means this phrase
-                    // was hard to match — which is also when false wakes climb.
+                    // was hard to match - which is also when false wakes climb.
                     let barelyMatched = result.threshold <= 0.10
                     var body = "Hey Codex is listening for it now. Change it any time from the menu bar."
                     if barelyMatched {
