@@ -30,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let didRelaunchForAccessibility =
         CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
     private var announceReadyWhenComplete = true
+    /// Setup just finished. Say so in the menu bar for a few seconds, because a
+    /// silent transition leaves the user with no idea whether it worked.
+    private var readyBannerUntil: Date?
+    private var previousSetupComplete = false
+    private var bannerTimer: Timer?
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
@@ -49,12 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Show the user where Hey Codex lives, once, on the very first launch
         // with setup outstanding. An accessory app that appears silently among
         // a dozen other menu bar icons is an app nobody finds.
-        if controller.needsFirstRunSetup || didRelaunchForAccessibility {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                guard let self else { return }
-                self.announceReadyWhenComplete = false
-                self.reopenMenu()
-            }
+        // Discovery is handled by the status item carrying readable text, which
+        // works regardless of activation state. Programmatically opening the
+        // menu at launch does not, so it is not relied on.
+        if didRelaunchForAccessibility {
+            announceReadyWhenComplete = false
+            announceReady()
         }
     }
 
@@ -113,7 +118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func buildReadyMenu() {
-        let state = NSMenuItem(title: controller.status.menuText, action: nil, keyEquivalent: "")
+        // Always name the phrase. "Listening locally" told the user nothing
+        // about what to actually say.
+        let title = controller.isListening && controller.isArmed
+            ? "Listening for “\(controller.settings.wakePhrase)”"
+            : controller.status.menuText
+        let state = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         state.isEnabled = false
         menu.addItem(state)
         if let update = controller.availableUpdate {
@@ -168,9 +178,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshStatusIcon(_ state: SetupState) {
+        // An icon alone cannot say "you still need to do something here", and a
+        // symbol among a dozen other menu bar symbols is not noticeable. While
+        // setup is unfinished the item carries readable text instead.
+        if !state.isComplete {
+            statusItem.button?.title = " Set up Hey Codex"
+        } else if let until = readyBannerUntil, Date() < until {
+            statusItem.button?.title = " Say “\(controller.settings.wakePhrase)”"
+        } else {
+            statusItem.button?.title = ""
+            readyBannerUntil = nil
+        }
+
         let name: String
         if !state.isComplete {
-            // Unfinished setup should be visible without opening the menu.
             name = "exclamationmark.circle"
         } else if !controller.isListening {
             name = "pause.circle"
@@ -188,6 +209,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// While setup is outstanding the state can change in System Settings, where
     /// the app gets no notification. Poll so the menu is already correct the
     /// moment the user looks at it again.
+    /// Hold "Say “Hey Codex”" in the menu bar for long enough to be read, then
+    /// go back to the quiet icon.
+    private func announceReady() {
+        readyBannerUntil = Date().addingTimeInterval(12)
+        bannerTimer?.invalidate()
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: 12.5, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.readyBannerUntil = nil
+                self?.refreshMenu()
+            }
+        }
+        refreshMenu()
+    }
+
     private func startSetupPolling() {
         setupPoll?.invalidate()
         setupPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
@@ -196,13 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard !self.controller.setupState.isComplete else {
                     self.setupPoll?.invalidate()
                     self.setupPoll = nil
-                    self.refreshMenu()
-                    // Confirm, once, that setup finished. Otherwise the user is
-                    // left in System Settings with no idea it worked.
                     if self.announceReadyWhenComplete {
                         self.announceReadyWhenComplete = false
-                        self.reopenMenu()
+                        self.announceReady()
                     }
+                    self.refreshMenu()
                     return
                 }
                 // macOS has recorded the grant but this process was told no and
