@@ -5,7 +5,15 @@ import HeyClaudeKit
 
 /// Owns the local wake-word listener. The production path is deliberately
 /// small: bundled Hey Codex detects locally, then posts one configured Voice
-/// shortcut. It never transcribes recordings or infers ChatGPT's window state.
+/// shortcut. It never transcribes recordings.
+///
+/// It does read one fact about ChatGPT: whether ChatGPT's own process currently
+/// owns a floating window that is on screen — i.e. whether the Voice panel is
+/// up. That single bit is what lets the helper mirror the keyboard shortcut
+/// honestly: don't toggle Voice off when the user opened it themselves, re-arm
+/// when Voice ends by any means, and never show a locked icon for a Voice
+/// session that never started. See `VoicePanelObserver` for what is and is not
+/// read, and `VoiceDetectionTrust` for the fallback when the signal is absent.
 @MainActor
 final class AppController {
     enum Status: Equatable {
@@ -29,11 +37,22 @@ final class AppController {
 
     private let activation = VoiceActivationController()
     private let closeArbiter = ClosePhraseArbiter()
+    private let panel = VoicePanelObserver()
+    private let trust: VoiceDetectionTrust
+    private var panelWatch: Timer?
     private var audio: AudioCapture?
     private var wake: WakeWordEngineHolder?
     private var closeWake: WakeWordEngineHolder?
 
-    init() { settings = SettingsStore().load() }
+    /// How long to wait for the Voice panel after posting the shortcut. ChatGPT
+    /// shows it well inside this; the cap only bounds a launch that never lands.
+    private static let panelConfirmationTimeout: TimeInterval = 2.0
+
+    init() {
+        let loaded = SettingsStore().load()
+        settings = loaded
+        trust = VoiceDetectionTrust(isProven: loaded.voicePanelDetectionProven)
+    }
 
     var isListening: Bool { audio != nil }
     var isArmed: Bool { activation.isArmed }
@@ -132,6 +151,7 @@ final class AppController {
     func stopListening() { stopPipeline(); status = .stopped }
 
     func rearmVoice() {
+        stopPanelWatch()
         activation.rearm()
         status = isListening ? .listening : .stopped
     }
@@ -167,11 +187,32 @@ final class AppController {
             completion(.failure(.shellFailed("Voice is already active. End it first, then choose Re-arm Voice before testing again.")))
             return
         }
+        // Already open: posting the toggle here would close Voice and read as a
+        // failed test. Report the truth instead.
+        if trust.isProven, panel.isPanelVisible() {
+            activation.completeLaunch(success: true)
+            status = .latched
+            startPanelWatch()
+            completion(.success(()))
+            return
+        }
         postVoiceShortcut { [weak self] result in
             guard let self else { return }
-            self.activation.completeLaunch(success: result.isSuccess)
-            self.status = result.isSuccess ? .latched : .failed(result.failureDescription)
-            completion(result)
+            guard result.isSuccess else {
+                self.activation.completeLaunch(success: false)
+                self.status = .failed(result.failureDescription)
+                completion(result)
+                return
+            }
+            // The setup test is the natural place to learn that this machine's
+            // ChatGPT does expose a detectable Voice panel.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let appeared = await self.waitForPanel(visible: true,
+                                                       timeout: Self.panelConfirmationTimeout)
+                self.resolveLaunch(confirmed: appeared)
+                completion(result)
+            }
         }
     }
 
@@ -179,9 +220,18 @@ final class AppController {
     /// the exactly-once guard around this toggle shortcut.
     func endVoiceSession() {
         guard activation.beginClose() else { return }
+        // The shortcut is a toggle, so closing a session that already ended
+        // would *open* Voice instead. Re-arm without posting anything.
+        if trust.isProven, !panel.isPanelVisible() {
+            activation.completeClose(success: true)
+            stopPanelWatch()
+            status = isListening ? .listening : .stopped
+            return
+        }
         postVoiceShortcut { [weak self] result in
             guard let self else { return }
             self.activation.completeClose(success: result.isSuccess)
+            if result.isSuccess { self.stopPanelWatch() }
             self.status = result.isSuccess ? (self.isListening ? .listening : .stopped)
                                            : .failed(result.failureDescription)
         }
@@ -215,11 +265,106 @@ final class AppController {
     }
 
     private func sendLaunchShortcut() {
+        // The user may have opened Voice themselves with the keyboard shortcut.
+        // The shortcut is a toggle, so posting it again would close the session
+        // they just started. Hold the latch and do nothing.
+        if trust.isProven, panel.isPanelVisible() {
+            activation.completeLaunch(success: true)
+            status = .latched
+            startPanelWatch()
+            return
+        }
         postVoiceShortcut { [weak self] result in
             guard let self else { return }
-            self.activation.completeLaunch(success: result.isSuccess)
-            self.status = result.isSuccess ? .latched : .failed(result.failureDescription)
+            guard result.isSuccess else {
+                self.activation.completeLaunch(success: false)
+                self.status = .failed(result.failureDescription)
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let appeared = await self.waitForPanel(visible: true,
+                                                       timeout: Self.panelConfirmationTimeout)
+                self.resolveLaunch(confirmed: appeared)
+            }
         }
+    }
+
+    /// Decides what a launch *meant*. Posting the shortcut only proves macOS
+    /// accepted an event; it never proves Voice started. This is the one place
+    /// that difference is resolved.
+    private func resolveLaunch(confirmed: Bool) {
+        if confirmed {
+            if trust.observedPanel() { persistDetectionProven(true) }
+            activation.completeLaunch(success: true)
+            status = .latched
+            startPanelWatch()
+            return
+        }
+        // Never having seen a panel here means absence proves nothing — this
+        // ChatGPT build may not expose the signal at all. Behave exactly as the
+        // helper did before detection existed: assume the post landed.
+        guard trust.isProven else {
+            activation.completeLaunch(success: true)
+            status = .latched
+            return
+        }
+        // A detector that worked and now keeps missing is more likely stale than
+        // right. Give up the signal rather than block the user with it.
+        if trust.launchWentUnconfirmed() {
+            persistDetectionProven(false)
+            activation.completeLaunch(success: true)
+            status = .latched
+            return
+        }
+        activation.completeLaunch(success: false)
+        status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) opens Voice in ChatGPT, then say Hey Codex again.")
+    }
+
+    /// Polls for the panel to reach `visible`. Returns false on timeout.
+    private func waitForPanel(visible: Bool, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if panel.isPanelVisible() == visible { return true }
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+        return panel.isPanelVisible() == visible
+    }
+
+    /// Watches for Voice ending by any means — the keyboard shortcut, clicking
+    /// away, or ChatGPT closing it — and re-arms the wake phrase. Without this
+    /// the helper stays latched until an explicit Close Codex, which is exactly
+    /// the state where "Hey Codex" appears to do nothing.
+    private func startPanelWatch() {
+        guard trust.isProven else { return }
+        panelWatch?.invalidate()
+        panelWatch = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.panelWatchTick() }
+        }
+    }
+
+    private func panelWatchTick() {
+        guard isListening, !activation.isArmed, trust.isProven else {
+            stopPanelWatch()
+            return
+        }
+        guard !panel.isPanelVisible() else { return }
+        stopPanelWatch()
+        activation.rearm()
+        status = .listening
+    }
+
+    private func stopPanelWatch() {
+        panelWatch?.invalidate()
+        panelWatch = nil
+    }
+
+    private func persistDetectionProven(_ proven: Bool) {
+        guard settings.voicePanelDetectionProven != proven else { return }
+        var updated = settings
+        updated.voicePanelDetectionProven = proven
+        try? SettingsStore().save(updated)
+        settings = updated
     }
 
     private func postVoiceShortcut(completion: @escaping @MainActor (Result<Void, LaunchFailure>) -> Void) {
@@ -231,6 +376,7 @@ final class AppController {
     }
 
     private func stopPipeline() {
+        stopPanelWatch()
         audio?.stop()
         audio = nil
         wake = nil

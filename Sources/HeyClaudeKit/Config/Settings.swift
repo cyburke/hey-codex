@@ -60,6 +60,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// to post the configured Voice shortcut. This drives the focused first-run
     /// setup window; it is separate from wake-phrase enrollment.
     public var voiceShortcutSetupCompleted: Bool
+    /// True once a ChatGPT Voice panel has actually been observed on this
+    /// machine. Until then the helper cannot tell "Voice is closed" from
+    /// "this ChatGPT build does not expose the signal", so it does not try.
+    public var voicePanelDetectionProven: Bool
 
     public init(projectDirectory: String = NSHomeDirectory(),
                 preferredTarget: LaunchTarget = .terminal(.terminalApp),
@@ -80,7 +84,8 @@ public struct Settings: Codable, Equatable, Sendable {
                 pushToTalkKey: PushToTalkKey = .rightOption,
                 wakePhrase: String = "Hey Codex",
                 voiceShortcut: VoiceShortcut = .default,
-                voiceShortcutSetupCompleted: Bool = false) {
+                voiceShortcutSetupCompleted: Bool = false,
+                voicePanelDetectionProven: Bool = false) {
         self.projectDirectory = projectDirectory
         self.preferredTarget = preferredTarget
         self.wakeKeywordsScore = wakeKeywordsScore
@@ -101,6 +106,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.wakePhrase = WakePhrase.normalize(wakePhrase) ?? "Hey Codex"
         self.voiceShortcut = voiceShortcut
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
+        self.voicePanelDetectionProven = voicePanelDetectionProven
     }
 
     /// Pre-`LaunchTarget` settings stored the default destination as a bare
@@ -150,6 +156,8 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? "Hey Codex") ?? "Hey Codex"
         self.voiceShortcut = try container.decodeIfPresent(VoiceShortcut.self, forKey: .voiceShortcut) ?? .default
         self.voiceShortcutSetupCompleted = try container.decodeIfPresent(Bool.self, forKey: .voiceShortcutSetupCompleted)
+            ?? false
+        self.voicePanelDetectionProven = try container.decodeIfPresent(Bool.self, forKey: .voicePanelDetectionProven)
             ?? false
     }
 

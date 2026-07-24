@@ -90,6 +90,29 @@ func checkVoiceShortcut() -> Bool {
     }
 }
 
+/// Live probe: proves the Core Graphics window bridge actually decodes, which
+/// unit tests of the pure rule cannot show. A silent cast failure here would
+/// look exactly like "Voice never opens", so it is worth checking directly.
+/// Not part of `all` — it reads live window-server state and needs a GUI session.
+func probeVoicePanel() -> Bool {
+    run("voice.panelObserverLive") { c in
+        let windows = VoicePanelObserver.currentWindows()
+        print("  [diag] window bridge decoded \(windows.count) window(s)")
+        c.assert(!windows.isEmpty,
+                 "window list came back empty — the CGWindow bridge or a GUI session is missing")
+        let pid = VoicePanelObserver.chatGPTProcessIdentifier()
+        print("  [diag] ChatGPT pid: \(pid.map(String.init) ?? "not running")")
+        if let pid {
+            let owned = windows.filter { $0.ownerProcessIdentifier == pid }
+            let floating = owned.filter { $0.layer > 0 }
+            print("  [diag] ChatGPT windows: \(owned.count), floating: \(floating.count), " +
+                  "floating on screen: \(floating.filter(\.isOnscreen).count)")
+            c.assert(!owned.isEmpty, "ChatGPT is running but owns no decodable windows")
+        }
+        print("  [diag] Voice panel visible: \(VoicePanelObserver().isPanelVisible())")
+    }
+}
+
 func checkWakePhraseDefaults() -> Bool {
     run("wakePhrase.defaults") { c in
         c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
@@ -654,6 +677,7 @@ func main() -> Int32 {
     maybe("wake-negative", checkWakeNegative)
     maybe("wake-control", checkWakePositiveControl)
     if requested != "all" {
+        maybe("voice-panel", probeVoicePanel)
         maybe("wake-positive", checkWakePositive)
         maybe("wake-probe", probeWake)
         maybe("decode-probe", probeDecode)
