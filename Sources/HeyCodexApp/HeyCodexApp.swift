@@ -152,7 +152,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item("Get ChatGPT for Mac…", #selector(openChatGPTDownload)))
             menu.addItem(.separator())
         }
-        menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
+        // Until a launch has actually been observed to work, put the test first
+        // and weight it. Otherwise the user's first spoken phrase doubles as the
+        // app's first ever attempt, with nothing proven and no way to see that
+        // the shortcut went nowhere.
+        if !controller.isVoiceStateVerified {
+            menu.addItem(action("Try It: Test ChatGPT Voice", #selector(testVoiceShortcut)))
+            addNote("Confirms the hotkey matches before you rely on the phrase.")
+        } else {
+            menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
+        }
         let phraseTitle = controller.hasEnrolledWakePhrase
             ? "Wake Phrase: “\(controller.settings.wakePhrase)”…"
             : "Use My Own Wake Phrase…"
@@ -213,7 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 label = "<Opening ChatGPT Voice...>"
                 tint = .systemBlue
             } else if let until = readyBannerUntil, Date() < until {
-                label = "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D} to start>"
+                label = controller.isVoiceStateVerified
+                    ? "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D} to start>"
+                    : "<Ready: click to test>"
                 tint = .systemGreen
             } else {
                 label = ""
