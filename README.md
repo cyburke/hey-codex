@@ -107,7 +107,7 @@ If you hold an Apple Developer ID and want to contribute a notarized build, plea
 ## Known limits
 
 - Updates are not automatic. Hey Codex tells you when a release exists, you install it.
-- The app is signed but not notarized, so macOS asks you to approve it on first launch and again after each update.
+- The app is signed but not notarized. Homebrew handles that for you. A downloaded zip needs the one line above, or a trip through System Settings.
 - Upgrading can re-prompt for Microphone and Accessibility, because a rebuilt app can look like a new app to macOS.
 - It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
 
