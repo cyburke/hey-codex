@@ -15,6 +15,10 @@ BIN="$(swift build --product HeyCodexApp -c "$CONFIG" --show-bin-path)/HeyCodexA
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/HeyCodex"
+# Drop local/debug symbols before signing. The static sherpa-onnx + onnxruntime
+# archives carry a large symbol table that nothing needs at runtime (~8 MB).
+# This must run before codesign, or it invalidates the signature.
+strip -x "$APP/Contents/MacOS/HeyCodex"
 cp "$ROOT/scripts/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
@@ -27,13 +31,30 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # selftest decode probes; Hey Codex never transcribes, so bundling it added
 # 631 MB to a download for a capability the product does not have. Anything the
 # app needs at runtime must be added here explicitly, not swept in wholesale.
+#
+# Within the wake-word model, copy only the four files WakeWordEngine opens.
+# The released model directory also ships int8 variants, bpe.model, test WAVs,
+# and a README; none are loaded at runtime. Keep this list in sync with
+# WakeWordEngine.init — a missing file fails loudly there with .missingModelFile.
 KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
-if [ ! -d "$ROOT/Models/$KWS_MODEL" ] || [ ! -f "$ROOT/Models/keywords.txt" ]; then
-    echo "Missing wake-word model or keyword list. Run ./scripts/fetch-models.sh before bundling." >&2
+KWS_FILES=(
+    "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+    "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+    "joiner-epoch-12-avg-2-chunk-16-left-64.onnx"
+    "tokens.txt"
+)
+if [ ! -f "$ROOT/Models/keywords.txt" ]; then
+    echo "Missing Models/keywords.txt. Run ./scripts/fetch-models.sh before bundling." >&2
     exit 1
 fi
-mkdir -p "$APP/Contents/Resources/Models"
-ditto "$ROOT/Models/$KWS_MODEL" "$APP/Contents/Resources/Models/$KWS_MODEL"
+mkdir -p "$APP/Contents/Resources/Models/$KWS_MODEL"
+for f in "${KWS_FILES[@]}"; do
+    if [ ! -f "$ROOT/Models/$KWS_MODEL/$f" ]; then
+        echo "Missing wake-word model file: $KWS_MODEL/$f. Run ./scripts/fetch-models.sh before bundling." >&2
+        exit 1
+    fi
+    cp "$ROOT/Models/$KWS_MODEL/$f" "$APP/Contents/Resources/Models/$KWS_MODEL/$f"
+done
 cp "$ROOT/Models/keywords.txt" "$APP/Contents/Resources/Models/keywords.txt"
 
 SIGN_ID="${HEYCODEX_SIGN_ID:-}"

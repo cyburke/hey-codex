@@ -112,6 +112,35 @@ func probeVoicePanel() -> Bool {
     }
 }
 
+/// Verify a *built bundle's* Models directory is complete enough to start the
+/// wake engine. bundle-app.sh copies an explicit file list rather than the whole
+/// model directory, so this is the regression guard for that list: a file
+/// dropped from it fails here instead of silently at a user's first launch.
+/// Run: `swift run hey-codex-selftest bundle-models dist/HeyCodex.app`
+func probeBundleModels(_ appPath: String) -> Bool {
+    let models = URL(fileURLWithPath: appPath)
+        .appendingPathComponent("Contents/Resources/Models")
+    return run("bundle.modelsAreComplete") { c in
+        let kws = models.appendingPathComponent(
+            "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
+        let keywords = models.appendingPathComponent("keywords.txt")
+        c.assert(FileManager.default.fileExists(atPath: keywords.path),
+                 "bundled keywords.txt is missing")
+        // Constructing the engine is the real check: it opens every model file
+        // it needs and throws .missingModelFile naming any that is absent.
+        let engine = try WakeWordEngine(modelDir: kws, keywordsFile: keywords,
+                                        keywordsThreshold: wakeThreshold)
+        let control = try AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/0.wav"))
+        c.assert(!engine.detects(in: control),
+                 "bundled engine fired on unrelated speech")
+        let size = (try? FileManager.default.subpathsOfDirectory(atPath: models.path)
+            .compactMap { try? FileManager.default.attributesOfItem(
+                atPath: models.appendingPathComponent($0).path)[.size] as? Int }
+            .reduce(0, +)) ?? 0
+        print("  [diag] bundled Models total: \(size / 1_048_576) MB")
+    }
+}
+
 func checkWakePhraseDefaults() -> Bool {
     run("wakePhrase.defaults") { c in
         c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
@@ -609,6 +638,10 @@ func main() -> Int32 {
         let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
         let editor = EditorKind(rawValue: editorArg) ?? .cursor
         return probeEditorOpenLive(editor) ? 0 : 1
+    }
+    if requested == "bundle-models" {
+        let app = CommandLine.arguments.dropFirst(2).first ?? "dist/HeyCodex.app"
+        return probeBundleModels(app) ? 0 : 1
     }
     if requested == "decode-file" {
         guard let path = CommandLine.arguments.dropFirst(2).first else {
