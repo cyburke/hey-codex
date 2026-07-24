@@ -25,7 +25,7 @@ final class AppController {
             case .starting: return "Starting local listener…"
             case .listening: return "Listening locally"
             case .activating: return "Sending Voice shortcut…"
-            case .latched: return "Voice active — say Close Codex when finished"
+            case .latched: return "Voice active — close it in ChatGPT when finished"
             case .failed(let message): return message
             }
         }
@@ -36,13 +36,11 @@ final class AppController {
     var onStatusChange: (() -> Void)?
 
     private let activation = VoiceActivationController()
-    private let closeArbiter = ClosePhraseArbiter()
     private let panel = VoicePanelObserver()
     private let trust: VoiceDetectionTrust
     private var panelWatch: Timer?
     private var audio: AudioCapture?
     private var wake: WakeWordEngineHolder?
-    private var closeWake: WakeWordEngineHolder?
 
     /// How long to wait for the Voice panel after posting the shortcut. ChatGPT
     /// shows it well inside this; the cap only bounds a launch that never lands.
@@ -96,7 +94,6 @@ final class AppController {
         let wakeModel = modelsDirectory.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
         let launchSettings = settings
         let activation = activation
-        let closeArbiter = closeArbiter
         do {
             // Personal calibration is quarantined from the production listener
             // until it has its own qualified release path.
@@ -105,40 +102,15 @@ final class AppController {
                 keywordsFile: modelsDirectory.appendingPathComponent("keywords.txt"),
                 keywordsThreshold: launchSettings.wakeKeywordsThreshold,
                 keywordsScore: launchSettings.wakeKeywordsScore))
-            let closeWake = WakeWordEngineHolder(try WakeWordEngine(
-                modelDir: wakeModel,
-                keywordsFile: modelsDirectory.appendingPathComponent("close-keywords.txt"),
-                keywordsThreshold: VoiceClosePhrase.keywordsThreshold,
-                keywordsScore: launchSettings.wakeKeywordsScore))
             let mic = try AudioCapture(onFrame: { [weak self] frame in
-                if activation.isArmed {
-                    guard wake.feed(frame), activation.beginLaunch() else { return }
-                    Task { @MainActor [weak self] in self?.sendLaunchShortcut() }
-                } else {
-                    // Keep watching for Hey Codex after Voice starts. A repeated
-                    // launch phrase is explicitly harmless and takes priority
-                    // over Close Codex, including any delayed KWS result from
-                    // the same utterance.
-                    if wake.feed(frame) {
-                        closeWake.reset()
-                        closeArbiter.cancelPendingCloseForRepeatedLaunch()
-                        return
-                    }
-                    guard closeWake.feed(frame),
-                          let ticket = closeArbiter.beginCloseCandidate() else { return }
-                    // Do not toggle immediately. The launch and close KWS
-                    // decoders can finish on adjacent frames for one spoken
-                    // phrase; a delayed Hey Codex result cancels this ticket.
-                    Task { @MainActor [weak self, closeArbiter] in
-                        do { try await Task.sleep(for: .milliseconds(1500)) }
-                        catch { return }
-                        guard closeArbiter.claimClose(ticket) else { return }
-                        self?.endVoiceSession()
-                    }
-                }
+                // Only one phrase exists. Ending a Voice session is ChatGPT's
+                // own job — its panel closes itself, and the panel watch re-arms
+                // this helper when it does. A wake heard while Voice is already
+                // up is deliberately ignored rather than toggled.
+                guard activation.isArmed, wake.feed(frame), activation.beginLaunch() else { return }
+                Task { @MainActor [weak self] in self?.sendLaunchShortcut() }
             })
             self.wake = wake
-            self.closeWake = closeWake
             self.audio = mic
             try mic.start()
             status = activation.isArmed ? .listening : .latched
@@ -153,8 +125,15 @@ final class AppController {
     func rearmVoice() {
         stopPanelWatch()
         activation.rearm()
+        rearmWakeEngine()
         status = isListening ? .listening : .stopped
     }
+
+    /// The wake engine is not fed while latched, so its streaming decoder holds
+    /// state from just before Voice opened — often the tail of the very "Hey
+    /// Codex" that opened it. Clear it on every re-arm so a stale buffer cannot
+    /// fire the moment listening resumes.
+    private func rearmWakeEngine() { wake?.reset() }
 
     @discardableResult
     func requestVoiceShortcutPermission() -> Bool {
@@ -216,8 +195,9 @@ final class AppController {
         }
     }
 
-    /// Explicit menu or spoken Close Codex. The activation controller provides
-    /// the exactly-once guard around this toggle shortcut.
+    /// The menu-bar escape hatch. Voice normally ends in ChatGPT's own panel,
+    /// but this stays as the manual way out — it is the only recovery when panel
+    /// detection is unproven and the helper is holding a latch it cannot verify.
     func endVoiceSession() {
         guard activation.beginClose() else { return }
         // The shortcut is a toggle, so closing a session that already ended
@@ -225,13 +205,17 @@ final class AppController {
         if trust.isProven, !panel.isPanelVisible() {
             activation.completeClose(success: true)
             stopPanelWatch()
+            rearmWakeEngine()
             status = isListening ? .listening : .stopped
             return
         }
         postVoiceShortcut { [weak self] result in
             guard let self else { return }
             self.activation.completeClose(success: result.isSuccess)
-            if result.isSuccess { self.stopPanelWatch() }
+            if result.isSuccess {
+                self.stopPanelWatch()
+                self.rearmWakeEngine()
+            }
             self.status = result.isSuccess ? (self.isListening ? .listening : .stopped)
                                            : .failed(result.failureDescription)
         }
@@ -318,6 +302,7 @@ final class AppController {
             return
         }
         activation.completeLaunch(success: false)
+        rearmWakeEngine()
         status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) opens Voice in ChatGPT, then say Hey Codex again.")
     }
 
@@ -333,8 +318,8 @@ final class AppController {
 
     /// Watches for Voice ending by any means — the keyboard shortcut, clicking
     /// away, or ChatGPT closing it — and re-arms the wake phrase. Without this
-    /// the helper stays latched until an explicit Close Codex, which is exactly
-    /// the state where "Hey Codex" appears to do nothing.
+    /// the helper stays latched with no spoken way out, which is exactly the
+    /// state where "Hey Codex" appears to do nothing.
     private func startPanelWatch() {
         guard trust.isProven else { return }
         panelWatch?.invalidate()
@@ -351,6 +336,7 @@ final class AppController {
         guard !panel.isPanelVisible() else { return }
         stopPanelWatch()
         activation.rearm()
+        rearmWakeEngine()
         status = .listening
     }
 
@@ -380,7 +366,6 @@ final class AppController {
         audio?.stop()
         audio = nil
         wake = nil
-        closeWake = nil
     }
 
     private func markVoiceShortcutSetupCompleted() {

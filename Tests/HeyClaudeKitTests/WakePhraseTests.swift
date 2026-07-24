@@ -11,8 +11,4 @@ final class WakePhraseTests: XCTestCase {
         XCTAssertTrue(WakePhrase.isRecommended("Hey Jarvis"))
     }
 
-    func test_closePhraseIsSeparateFromTheLaunchPhrase() {
-        XCTAssertEqual(VoiceClosePhrase.displayName, "Close Codex")
-        XCTAssertNotEqual(VoiceClosePhrase.keywordLine, "▁HE Y ▁CO DE X")
-    }
 }

@@ -60,7 +60,6 @@ let kwsDir = modelsDir
 let asrDir = modelsDir
     .appendingPathComponent("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
 let keywordsFile = modelsDir.appendingPathComponent("keywords.txt")
-let closeKeywordsFile = modelsDir.appendingPathComponent("close-keywords.txt")
 
 // MARK: - Checks
 
@@ -118,16 +117,6 @@ func checkWakePhraseDefaults() -> Bool {
         c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
                       "Hey Codex must remain the release default")
         c.assertEqual(WakePhrase.presets, ["Hey Codex", "Hey ChatGPT", "Hey Jarvis"])
-    }
-}
-
-func checkClosePhrase() -> Bool {
-    run("voice.closePhrase") { c in
-        let stored = try String(contentsOf: closeKeywordsFile, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        c.assertEqual(VoiceClosePhrase.displayName, "Close Codex")
-        c.assertEqual(stored, VoiceClosePhrase.keywordLine,
-                      "bundled close keyword must match the application constant")
     }
 }
 
@@ -252,30 +241,6 @@ func probeDecodeFile(_ path: String) -> Bool {
     let r = KwsDebug.decodeTokens(modelDir: kwsDir, samples: samples)
     print("DECODE  text=\"\(r.text)\"  tokens=\(r.tokens)")
     return !r.tokens.isEmpty
-}
-
-/// Verify an arbitrary 16 kHz mono WAV against the shipped Close Codex keyword.
-func probeCloseFile(_ path: String) -> Bool {
-    guard let samples = try? AudioSamples.load(URL(fileURLWithPath: path)) else {
-        print("FAIL    could not load \(path) as 16 kHz mono audio")
-        return false
-    }
-    guard let engine = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: closeKeywordsFile,
-                                           keywordsThreshold: wakeThreshold) else {
-        print("FAIL    could not create Close Codex wake engine")
-        return false
-    }
-    let matched = diagDetect(engine, samples, "Close Codex")
-    guard let launchEngine = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: keywordsFile,
-                                                 keywordsThreshold: wakeThreshold) else {
-        print("FAIL    could not create Hey Codex wake engine")
-        return false
-    }
-    let accidentallyLaunched = diagDetect(launchEngine, samples, "Close Codex against launch keyword")
-    let passed = matched && !accidentallyLaunched
-    print(passed ? "CLOSE KEYWORD MATCHED WITHOUT LAUNCH FALSE POSITIVE"
-                 : "CLOSE KEYWORD CHECK FAILED")
-    return passed
 }
 
 // Live calibration: record YOUR real "hey codex" and show the tokens the KWS
@@ -652,13 +617,6 @@ func main() -> Int32 {
         }
         return probeDecodeFile(path) ? 0 : 1
     }
-    if requested == "close-file" {
-        guard let path = CommandLine.arguments.dropFirst(2).first else {
-            print("usage: hey-codex-selftest close-file /path/to/16k-mono.wav")
-            return 2
-        }
-        return probeCloseFile(path) ? 0 : 1
-    }
 
     func maybe(_ key: String, _ check: () -> Bool) {
         if requested == "all" || requested == key {
@@ -670,7 +628,6 @@ func main() -> Int32 {
     maybe("latch", checkActivationLatch)
     maybe("shortcut", checkVoiceShortcut)
     maybe("wake-phrase", checkWakePhraseDefaults)
-    maybe("close-phrase", checkClosePhrase)
     // `all` deliberately uses only release-relevant, deterministic checks.
     // The remaining probes stay available by explicit name for model diagnosis.
     maybe("audio", checkAudioLoader)

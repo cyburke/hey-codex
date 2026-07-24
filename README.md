@@ -11,8 +11,9 @@ Hey Codex is a GPL-3.0 fork of [littlemelon77/hey-claude](https://github.com/lit
 - Defaults to the wake phrase **“Hey Codex.”** Choose **“Hey ChatGPT,” “Hey Jarvis,”** or a custom phrase.
 - Ships with a bundled **“Hey Codex”** wake phrase. Personal phrase enrollment is intentionally not part of this alpha until it has its own qualification path.
 - After a wake, posts the dedicated default shortcut **Control–Option–V (`⌃⌥V`)**. This is deliberately not Command–V, so ordinary copy/paste is unaffected.
-- Uses a conservative one-shot latch: after it activates Voice once, further wake phrases are ignored until you choose **Re-arm Voice** in the menu bar. ChatGPT does not provide a supported Voice-session state API, so this is an intentional local safety guard—not claimed session detection.
-- While Voice is active, repeat **“Hey Codex”** is ignored. Say **“Close Codex”** to end that Voice chat and re-arm Hey Codex, or choose **End ChatGPT Voice & Re-arm** in the menu bar.
+- Mirrors the hotkey rather than guessing. Hey Codex checks whether ChatGPT’s Voice panel is actually on screen, so saying **“Hey Codex”** while Voice is already open does nothing instead of closing it — including when you opened Voice yourself with the keyboard.
+- End Voice however you like: close it in ChatGPT’s own panel, press the hotkey, or choose **End ChatGPT Voice & Re-arm** in the menu bar. Hey Codex notices and re-arms on its own. There is no “stop” phrase to remember.
+- Detection is a bonus, never a dependency. It reads only which process owns an on-screen floating window — never window contents, position, size, or titles, and it needs no Screen Recording permission. Until Hey Codex has actually seen a Voice panel on your Mac it makes no assumptions at all, and if ChatGPT ever changes that panel it quietly falls back to simply sending the hotkey.
 
 ## Setup
 
@@ -21,7 +22,7 @@ Hey Codex is a GPL-3.0 fork of [littlemelon77/hey-claude](https://github.com/lit
 3. Launch Hey Codex. Its monochrome wake-signal icon appears in the menu bar. It is deliberately not a microphone, so it is distinct from macOS’s microphone-in-use indicator.
 4. The focused setup window asks for **Microphone** access. Approve it to let Hey Codex listen locally for the wake phrase.
 5. In that same window, choose **Enable ChatGPT Voice**. macOS asks for permission because Hey Codex must post the configured global shortcut. Choose the system prompt’s Settings option, enable **Hey Codex** in **System Settings → Privacy & Security → Accessibility**, then return to the app and run **Test ChatGPT Voice**.
-6. Say your phrase. While Voice is active, say **“Close Codex”** to end it and re-arm Hey Codex, or use **End ChatGPT Voice & Re-arm** in the menu.
+6. Say your phrase. End Voice in ChatGPT’s panel, with the hotkey, or via **End ChatGPT Voice & Re-arm** in the menu — Hey Codex re-arms itself either way.
 
 The menu bar shows the current state, Settings, the explicit **End ChatGPT Voice & Re-arm** control while Voice is active, local update status, and Quit. First-run setup controls disappear after the shortcut permission is confirmed. The current local build does not check online or install updates automatically.
 

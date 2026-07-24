@@ -41,15 +41,6 @@ final class ProductWakePhraseTests: XCTestCase {
                                   keywordsScore: 2.0)
     }
 
-    private func closeEngine() throws -> WakeWordEngine {
-        let models = modelsDirectory()
-        let model = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
-        return try WakeWordEngine(modelDir: model,
-                                  keywordsFile: models.appendingPathComponent("close-keywords.txt"),
-                                  keywordsThreshold: VoiceClosePhrase.keywordsThreshold,
-                                  keywordsScore: 2.0)
-    }
-
     private func maximumLaunchEngine() throws -> WakeWordEngine {
         let models = modelsDirectory()
         let model = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
@@ -59,46 +50,10 @@ final class ProductWakePhraseTests: XCTestCase {
                                   keywordsScore: 2.0)
     }
 
-    func testHeyCodexTriggersLaunchButNotClose() throws {
+    func testHeyCodexTriggersLaunch() throws {
         let wav = try spokenWav("Hey Codex")
         defer { try? FileManager.default.removeItem(at: wav) }
-        let samples = try AudioSamples.load(wav)
-        let launch = try launchEngine()
-        let close = try closeEngine()
-        XCTAssertTrue(launch.detects(in: samples))
-        XCTAssertFalse(close.detects(in: samples))
-    }
-
-    func testCloseCodexTriggersCloseButNotLaunch() throws {
-        let wav = try spokenWav("Close Codex")
-        defer { try? FileManager.default.removeItem(at: wav) }
-        let samples = try AudioSamples.load(wav)
-        let launch = try launchEngine()
-        let close = try closeEngine()
-        XCTAssertFalse(launch.detects(in: samples))
-        XCTAssertFalse(try maximumLaunchEngine().detects(in: samples))
-        XCTAssertTrue(close.detects(in: samples))
-    }
-
-    func testCloseCodexIgnoresSilenceAndBundledModelSpeech() throws {
-        let silence = [Float](repeating: 0, count: 16_000)
-        XCTAssertFalse(try closeEngine().detects(in: silence))
-
-        let modelSpeech = try AudioSamples.load(
-            modelsDirectory()
-                .appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/test_wavs/0.wav"))
-        XCTAssertFalse(try closeEngine().detects(in: modelSpeech))
-    }
-
-    func testCloseCodexIgnoresSyntheticAssistantSpeech() throws {
-        // These deterministic TTS samples approximate ordinary assistant
-        // replies. They are intentionally not presented as a substitute for
-        // a real ChatGPT Voice human acceptance check.
-        for phrase in ["I can help you with that.", "The weather today is sunny and warm."] {
-            let wav = try spokenWav(phrase)
-            defer { try? FileManager.default.removeItem(at: wav) }
-            XCTAssertFalse(try closeEngine().detects(in: AudioSamples.load(wav)), "Unexpected close for: \(phrase)")
-        }
+        XCTAssertTrue(try launchEngine().detects(in: AudioSamples.load(wav)))
     }
 
     func testMaximumLaunchSensitivityRejectsNegativeCorpus() throws {

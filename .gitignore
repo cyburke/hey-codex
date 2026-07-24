@@ -2,9 +2,8 @@
 .build/
 *.xcodeproj/xcuserdata/
 Models/*
-# …but the hand-authored keywords file is a small tracked text artifact.
+# …but the hand-authored keyword file is a small tracked text artifact.
 !Models/keywords.txt
-!Models/close-keywords.txt
 Sources/CSherpaOnnx/sherpa-onnx.xcframework/
 Tests/HeyClaudeKitTests/Fixtures/*.wav
 *.onnx

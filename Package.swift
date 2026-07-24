@@ -95,7 +95,6 @@ let package = Package(
                 "VoiceActivationControllerTests.swift",
                 "VoicePanelObserverTests.swift",
                 "VoiceDetectionTrustTests.swift",
-                "ClosePhraseGateTests.swift",
                 "VoiceActivityDetectorTests.swift",
                 "VoiceSessionTests.swift",
                 "VoiceShortcutTests.swift",
