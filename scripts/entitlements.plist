@@ -5,8 +5,9 @@
 	<!-- On-device wake-word + transcription listens on the mic. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Drives the terminal (AppleEvents) to launch a Claude Code session. -->
-	<key>com.apple.security.automation.apple-events</key>
+	<!-- Matches Xcode's local Development signing profile. This is for the
+	     free on-device alpha only; release distribution uses Developer ID. -->
+	<key>com.apple.security.get-task-allow</key>
 	<true/>
 </dict>
 </plist>

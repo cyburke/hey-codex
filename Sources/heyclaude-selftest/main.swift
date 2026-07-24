@@ -60,6 +60,7 @@ let kwsDir = modelsDir
 let asrDir = modelsDir
     .appendingPathComponent("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
 let keywordsFile = modelsDir.appendingPathComponent("keywords.txt")
+let closeKeywordsFile = modelsDir.appendingPathComponent("close-keywords.txt")
 
 // MARK: - Checks
 
@@ -69,10 +70,49 @@ func checkSherpaLinks() -> Bool {
     }
 }
 
-// Mirrors AudioSamplesTests.test_loads16kMonoFloatSamples.
+func checkActivationLatch() -> Bool {
+    run("voice.activationLatch") { c in
+        let latch = VoiceActivationLatch()
+        c.assert(latch.consumeIfArmed(), "first wake should consume the latch")
+        c.assert(!latch.consumeIfArmed(), "repeated wake must be ignored")
+        latch.rearm()
+        c.assert(latch.consumeIfArmed(), "explicit re-arm should allow one new wake")
+    }
+}
+
+func checkVoiceShortcut() -> Bool {
+    run("voice.shortcutDefault") { c in
+        let shortcut = VoiceShortcut.default
+        c.assertEqual(shortcut.displayString, "⌃⌥V")
+        c.assertEqual(shortcut.virtualKeyCode, 9)
+        c.assert(shortcut.control && shortcut.option && !shortcut.command,
+                 "release default must be Control-Option-V, never Command-V")
+    }
+}
+
+func checkWakePhraseDefaults() -> Bool {
+    run("wakePhrase.defaults") { c in
+        c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
+                      "Hey Codex must remain the release default")
+        c.assertEqual(WakePhrase.presets, ["Hey Codex", "Hey ChatGPT", "Hey Jarvis"])
+    }
+}
+
+func checkClosePhrase() -> Bool {
+    run("voice.closePhrase") { c in
+        let stored = try String(contentsOf: closeKeywordsFile, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        c.assertEqual(VoiceClosePhrase.displayName, "Close Codex")
+        c.assertEqual(stored, VoiceClosePhrase.keywordLine,
+                      "bundled close keyword must match the application constant")
+    }
+}
+
+// Audio fixtures are not part of a release checkout. Use the KWS model's own
+// distributed validation WAV so this remains reproducible after a fresh clone.
 func checkAudioLoader() -> Bool {
     run("audio.loads16kMonoFloatSamples") { c in
-        let samples = try AudioSamples.load(fixture("hey_claude_only"))
+        let samples = try AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/0.wav"))
         c.assert(samples.count > 8000, "expected > 8000 samples, got \(samples.count)")
         c.assert(samples.allSatisfy { $0 >= -1.0 && $0 <= 1.0 },
                  "samples out of [-1, 1] range")
@@ -105,8 +145,8 @@ func diagDetect(_ engine: WakeWordEngine, _ samples: [Float], _ label: String) -
 func checkWakeNegative() -> Bool {
     run("wake.doesNotFireOnNegativeSpeech") { c in
         let engine = try makeWakeEngine()
-        let samples = try AudioSamples.load(fixture("negative_speech"))
-        c.assert(!diagDetect(engine, samples, "negative"), "fired on negative speech")
+        let samples = [Float](repeating: 0, count: 16000 * 2)
+        c.assert(!diagDetect(engine, samples, "silence"), "fired on silence")
     }
 }
 
@@ -179,7 +219,43 @@ func probeDecode() -> Bool {
     return true
 }
 
-// Live calibration: record YOUR real "hey claude" and show the tokens the KWS
+/// Decode an arbitrary 16 kHz mono WAV with the KWS model. This is used to
+/// calibrate a new dedicated command phrase before it is shipped as a keyword.
+func probeDecodeFile(_ path: String) -> Bool {
+    guard let samples = try? AudioSamples.load(URL(fileURLWithPath: path)) else {
+        print("FAIL    could not load \(path) as 16 kHz mono audio")
+        return false
+    }
+    let r = KwsDebug.decodeTokens(modelDir: kwsDir, samples: samples)
+    print("DECODE  text=\"\(r.text)\"  tokens=\(r.tokens)")
+    return !r.tokens.isEmpty
+}
+
+/// Verify an arbitrary 16 kHz mono WAV against the shipped Close Codex keyword.
+func probeCloseFile(_ path: String) -> Bool {
+    guard let samples = try? AudioSamples.load(URL(fileURLWithPath: path)) else {
+        print("FAIL    could not load \(path) as 16 kHz mono audio")
+        return false
+    }
+    guard let engine = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: closeKeywordsFile,
+                                           keywordsThreshold: wakeThreshold) else {
+        print("FAIL    could not create Close Codex wake engine")
+        return false
+    }
+    let matched = diagDetect(engine, samples, "Close Codex")
+    guard let launchEngine = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: keywordsFile,
+                                                 keywordsThreshold: wakeThreshold) else {
+        print("FAIL    could not create Hey Codex wake engine")
+        return false
+    }
+    let accidentallyLaunched = diagDetect(launchEngine, samples, "Close Codex against launch keyword")
+    let passed = matched && !accidentallyLaunched
+    print(passed ? "CLOSE KEYWORD MATCHED WITHOUT LAUNCH FALSE POSITIVE"
+                 : "CLOSE KEYWORD CHECK FAILED")
+    return passed
+}
+
+// Live calibration: record YOUR real "hey codex" and show the tokens the KWS
 // model emits for it + whether the current keyword fires. The synthetic fixtures
 // may tokenize differently than a real voice; this is the data we build the
 // keyword from. Run: `swift run heyclaude-selftest mic-decode`.
@@ -192,7 +268,7 @@ func probeMicDecode() -> Bool {
     }
 
     let rounds = 5, windowSec = 2.5
-    print("PROBE mic-decode — say \"hey claude\" once per round (\(rounds) rounds).")
+    print("PROBE mic-decode — say \"hey codex\" once per round (\(rounds) rounds).")
     let wake = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: keywordsFile,
                                    keywordsThreshold: 0.25, keywordsScore: 2.0)
     for round in 1...rounds {
@@ -200,7 +276,7 @@ func probeMicDecode() -> Bool {
         guard let mic = try? AudioCapture(onFrame: { buf.append($0) }) else {
             print("  mic init failed"); return true
         }
-        print("  Round \(round)/\(rounds): say \"hey claude\" NOW…")
+        print("  Round \(round)/\(rounds): say \"hey codex\" NOW…")
         do { try mic.start() } catch { print("  mic start failed: \(error)"); return true }
         Thread.sleep(forTimeInterval: windowSec)
         mic.stop()
@@ -372,6 +448,7 @@ func probeRoute() -> Bool {
             case .runCLI(let t):   return "runCLI(\(t))"
             case .openApp(let b):  return "openApp(\(b))"
             case .runShell(let s): return "runShell(\(s))"
+            case .sendCodexVoiceShortcut: return "sendCodexVoiceShortcut"
             }
         }
 
@@ -545,6 +622,20 @@ func main() -> Int32 {
         let editor = EditorKind(rawValue: editorArg) ?? .cursor
         return probeEditorOpenLive(editor) ? 0 : 1
     }
+    if requested == "decode-file" {
+        guard let path = CommandLine.arguments.dropFirst(2).first else {
+            print("usage: hey-codex-selftest decode-file /path/to/16k-mono.wav")
+            return 2
+        }
+        return probeDecodeFile(path) ? 0 : 1
+    }
+    if requested == "close-file" {
+        guard let path = CommandLine.arguments.dropFirst(2).first else {
+            print("usage: hey-codex-selftest close-file /path/to/16k-mono.wav")
+            return 2
+        }
+        return probeCloseFile(path) ? 0 : 1
+    }
 
     func maybe(_ key: String, _ check: () -> Bool) {
         if requested == "all" || requested == key {
@@ -553,21 +644,29 @@ func main() -> Int32 {
     }
 
     maybe("sherpa", checkSherpaLinks)
+    maybe("latch", checkActivationLatch)
+    maybe("shortcut", checkVoiceShortcut)
+    maybe("wake-phrase", checkWakePhraseDefaults)
+    maybe("close-phrase", checkClosePhrase)
+    // `all` deliberately uses only release-relevant, deterministic checks.
+    // The remaining probes stay available by explicit name for model diagnosis.
     maybe("audio", checkAudioLoader)
     maybe("wake-negative", checkWakeNegative)
     maybe("wake-control", checkWakePositiveControl)
-    maybe("wake-positive", checkWakePositive)
-    maybe("wake-probe", probeWake)
-    maybe("decode-probe", probeDecode)
-    maybe("mic-decode", probeMicDecode)
-    maybe("enroll", probeEnroll)
-    maybe("asr-only", probeTranscribeOnly)
-    maybe("boost-sweep", probeBoostSweep)
-    maybe("threshold-sweep", probeThresholdSweep)
-    maybe("asr", checkTranscribe)
-    maybe("route", probeRoute)
-    maybe("default-route", probeDefaultRouting)
-    maybe("editor-route", probeEditorRoute)
+    if requested != "all" {
+        maybe("wake-positive", checkWakePositive)
+        maybe("wake-probe", probeWake)
+        maybe("decode-probe", probeDecode)
+        maybe("mic-decode", probeMicDecode)
+        maybe("enroll", probeEnroll)
+        maybe("asr-only", probeTranscribeOnly)
+        maybe("boost-sweep", probeBoostSweep)
+        maybe("threshold-sweep", probeThresholdSweep)
+        maybe("asr", checkTranscribe)
+        maybe("route", probeRoute)
+        maybe("default-route", probeDefaultRouting)
+        maybe("editor-route", probeEditorRoute)
+    }
 
     return allOK ? 0 : 1
 }

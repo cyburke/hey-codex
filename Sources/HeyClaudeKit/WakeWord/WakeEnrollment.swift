@@ -4,7 +4,7 @@ import Foundation
 /// phrase into a calibrated, validated keyword file.
 ///
 /// Why this exists: the KWS model transcribes the *same* phrase differently per
-/// voice (e.g. "hey claude" → "hey cloud" → `▁HE Y ▁C LO U D`). A keyword built
+/// voice (e.g. "hey codex" → model-specific BPE tokens). A keyword built
 /// from dictionary spelling is only a partial match → flaky wake. Enrollment
 /// derives the keyword from the tokens the model *actually emits* for THIS user.
 ///
@@ -31,14 +31,16 @@ public struct WakeEnrollment {
     public let decode: @Sendable ([Float]) -> [String]
     /// Whether `lines` at `threshold` fires the spotter on `audio`.
     public let fires: @Sendable (_ lines: [String], _ threshold: Float, _ audio: [Float]) -> Bool
-    /// Dictionary-spelling fallback line, always appended for coverage.
-    public let fallbackLine: String
+    /// Optional bundled fallback line. Custom phrases intentionally have no
+    /// spelling-derived fallback: their KWS tokenization must come from the
+    /// user's recordings rather than a guessed BPE sequence.
+    public let fallbackLine: String?
     /// Threshold sweep, tried in order (descending); first one that fires all wins.
     public let thresholds: [Float]
 
     public init(decode: @escaping @Sendable ([Float]) -> [String],
                 fires: @escaping @Sendable (_ lines: [String], _ threshold: Float, _ audio: [Float]) -> Bool,
-                fallbackLine: String = "▁HE Y ▁C LA U DE",
+                fallbackLine: String? = nil,
                 thresholds: [Float] = [0.25, 0.20, 0.15, 0.10]) {
         self.decode = decode
         self.fires = fires
@@ -60,18 +62,22 @@ public struct WakeEnrollment {
         }.joined(separator: " ")
     }
 
-    /// A heuristic gate for rejecting junk captures (e.g. the model hearing "OUT"
-    /// when it missed the utterance): a real "hey claude/cloud" carries the
-    /// "claude" word-start C (`▁C`). Used by the recorder/UI to re-ask a slot.
+    /// A phrase-agnostic gate for rejecting empty or one-token glitch captures.
+    /// The keyword model's exact tokenization is learned from three recordings;
+    /// this only determines whether a clip is worth enrolling.
     public static func isPlausibleWake(tokens: [String]) -> Bool {
-        keywordLine(from: tokens).contains("▁C")
+        let line = keywordLine(from: tokens)
+        let pieces = line.split(separator: " ")
+        return pieces.count >= 2 && line.contains("▁")
     }
 
-    /// Distinct keyword lines derived from the isolated samples (order-preserving),
-    /// dropping empties.
-    static func derivedLines(isolated: [[String]]) -> [String] {
+    /// Distinct keyword lines derived from every accepted sample
+    /// (order-preserving), dropping empties. A wake phrase often has harmless
+    /// token variants between deliberate and natural speech; omitting the
+    /// natural sample made enrollment reject the very phrase it had just heard.
+    static func derivedLines(samples: [[String]]) -> [String] {
         var seen = Set<String>(), out: [String] = []
-        for tokens in isolated {
+        for tokens in samples {
             let line = keywordLine(from: tokens)
             guard !line.isEmpty, !seen.contains(line) else { continue }
             seen.insert(line); out.append(line)
@@ -82,16 +88,15 @@ public struct WakeEnrollment {
     // MARK: - Orchestration
 
     /// Run enrollment over the captured samples, returning the keyword config to
-    /// persist. Derives the keyword from the ISOLATED samples (clean tokens),
-    /// then validates against ALL samples — the natural one is the real-world
-    /// check that the keyword survives casual connected speech.
+    /// persist. Every accepted sample contributes a token variant, then the
+    /// complete set is validated against all recordings.
     public func enroll(samples: [Sample]) -> Result {
-        let isolatedTokens = samples.filter { $0.kind == .isolated }.map { decode($0.audio) }
-        let derived = Self.derivedLines(isolated: isolatedTokens)
+        let decoded = samples.map { decode($0.audio) }
+        let derived = Self.derivedLines(samples: decoded)
 
-        // Candidate = voice-derived lines + dictionary fallback (deduped).
+        // Candidate = voice-derived lines + optional bundled fallback (deduped).
         var lines = derived
-        if !lines.contains(fallbackLine) { lines.append(fallbackLine) }
+        if let fallbackLine, !lines.contains(fallbackLine) { lines.append(fallbackLine) }
 
         // Find the highest threshold (least eager) where every sample fires.
         for t in thresholds {

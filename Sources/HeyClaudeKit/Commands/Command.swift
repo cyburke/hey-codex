@@ -10,22 +10,23 @@ public enum CommandKind: Codable, Equatable, Sendable {
     case openApp(bundleID: String)
     /// Run an arbitrary shell command (no terminal window).
     case runShell(script: String)
+    /// Send the configured ChatGPT Voice shortcut through the HID event stream.
+    /// This deliberately leaves the frontmost application alone.
+    case sendCodexVoiceShortcut
 }
 
 /// A voice-triggerable command. Stored as data in Settings — adding a tool
 /// (Codex, "open Linear", a script) is a new Command, not new code.
 public struct Command: Codable, Equatable, Identifiable, Sendable {
     public var id: String
-    public var label: String              // human label ("Claude Code")
+    public var label: String              // human-facing command label
     public var triggers: [String]         // spoken phrases that select it (lowercased). [] = eligible only as a default.
     public var kind: CommandKind
     public var target: LaunchTarget?      // terminal or editor; nil → settings default
     public var acceptsPrompt: Bool        // whether trailing speech is passed as {prompt}
 
-    /// How this command's tool integrates with an editor (deep-link host/path/
-    /// param + extension glob). `nil` → terminal-only: editor targets are not
-    /// offered for it. Carries Claude Code's values for the seeded command; a
-    /// future "codex" command carries Codex's. See design §5.8.
+    /// Legacy terminal/editor integration metadata retained only to decode old
+    /// settings files. Hey Codex's shipped command does not use it.
     public var editorIntegration: EditorIntegration?
 
     public init(id: String, label: String, triggers: [String], kind: CommandKind,
@@ -64,13 +65,11 @@ public struct Command: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
-    /// The seeded out-of-box command set: bare "Hey Claude" and any prompt go to
-    /// Claude Code. (The legacy "open Claude desktop chat app" command was
-    /// removed — the app is now purely a Claude Code launcher. See design §5.6.)
+    /// The seeded out-of-box command: a bare "Hey Codex" sends the user's
+    /// configured global ChatGPT Voice shortcut without changing focus.
     public static let seededDefaults: [Command] = [
-        Command(id: "claude-code", label: "Claude Code", triggers: ["code"],
-                kind: .runCLI(commandTemplate: "claude {prompt}"),
-                acceptsPrompt: true,
-                editorIntegration: .claudeCode),
+        Command(id: "codex-voice", label: "Codex Voice", triggers: [],
+                kind: .sendCodexVoiceShortcut,
+                acceptsPrompt: false),
     ]
 }

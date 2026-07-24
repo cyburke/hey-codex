@@ -13,8 +13,10 @@ public final class KeywordStore {
     public convenience init() {
         let dir = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HeyClaude", isDirectory: true)
+            .appendingPathComponent("HeyCodex", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Do not copy a legacy enrollment: its token sequence belongs to a
+        // different phrase and could make a fresh Hey Codex install unreliable.
         self.init(fileURL: dir.appendingPathComponent("keywords.txt"))
     }
 

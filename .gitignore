@@ -4,6 +4,7 @@
 Models/*
 # …but the hand-authored keywords file is a small tracked text artifact.
 !Models/keywords.txt
+!Models/close-keywords.txt
 Sources/CSherpaOnnx/sherpa-onnx.xcframework/
 Tests/HeyClaudeKitTests/Fixtures/*.wav
 *.onnx
@@ -34,12 +35,13 @@ web/
 docs/
 CLAUDE.md
 
-# Built app bundle (assembled by scripts/bundle-app.sh)
-HeyClaude.app/
-# Release artifacts (assembled by scripts/release.sh) — large, regenerated builds.
-HeyClaude.dmg
-HeyClaude-notarize.zip
+# Built app bundles and release archives are regenerated locally; never commit them.
+dist/
+HeyCodex.app/
+HeyCodex.dmg
+HeyCodex-notarize.zip
 
 # Local agent / harness state — never publish.
 .superpowers/
 .claude/
+HeyClaude.app/

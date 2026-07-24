@@ -56,6 +56,84 @@ public struct CommandExecutor: Sendable {
         case .runShell(let script):
             do { try runShell(script); completion(.success(())) }
             catch { completion(.failure(.shellFailed(error.localizedDescription))) }
+        case .sendCodexVoiceShortcut:
+            // macOS grants this capability specifically as permission to post
+            // events. `AXIsProcessTrusted()` is broader and can report false
+            // for an otherwise-authorized event poster, so use the matching
+            // Core Graphics preflight here.
+            if !CGPreflightPostEventAccess() {
+                // Permission is requested only by the explicit menu setup action.
+                // A wake phrase must never surprise someone with a macOS privacy
+                // dialog, and reporting the missing capability here keeps the
+                // user on a clear, repeatable path to repair it.
+                completion(.failure(.shellFailed("Choose Enable ChatGPT Voice Shortcut in the Hey Codex menu, then try again.")))
+                return
+            }
+            let shortcut = settings.voiceShortcut
+            guard shortcut.isUsable, let keyCode = shortcut.virtualKeyCode else {
+                completion(.failure(.shellFailed("Choose a supported Voice shortcut key in Hey Codex settings.")))
+                return
+            }
+            guard let source = CGEventSource(stateID: .hidSystemState) else {
+                completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                return
+            }
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            let destination = VoiceShortcutRouting.destination(
+                frontmostBundleIdentifier: frontmost?.bundleIdentifier,
+                frontmostProcessIdentifier: frontmost?.processIdentifier ?? 0)
+            func post(_ event: CGEvent) {
+                switch destination {
+                case .systemHID: event.post(tap: .cghidEventTap)
+                case .application(let pid): event.postToPid(pid_t(pid))
+                }
+            }
+
+            // A shortcut is a physical key sequence, not simply a letter event
+            // with modifier bits painted onto it. Some apps (including the new
+            // Voice surface) track each modifier transition and reject the
+            // abbreviated form. Emit the complete key lifecycle in the same
+            // order a keyboard does: modifiers down, key down/up, modifiers up.
+            let modifiers: [(keyCode: CGKeyCode, flag: CGEventFlags)] = [
+                shortcut.control ? (59, .maskControl) : nil,   // left Control
+                shortcut.option ? (58, .maskAlternate) : nil,  // left Option
+                shortcut.command ? (55, .maskCommand) : nil,   // left Command
+            ].compactMap { $0 }
+            var flags: CGEventFlags = []
+            for modifier in modifiers {
+                flags.insert(modifier.flag)
+                guard let event = CGEvent(keyboardEventSource: source,
+                                          virtualKey: modifier.keyCode,
+                                          keyDown: true) else {
+                    completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                    return
+                }
+                event.flags = flags
+                post(event)
+            }
+            guard let down = CGEvent(keyboardEventSource: source,
+                                     virtualKey: CGKeyCode(keyCode), keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source,
+                                   virtualKey: CGKeyCode(keyCode), keyDown: false) else {
+                completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                return
+            }
+            down.flags = flags
+            up.flags = flags
+            post(down)
+            post(up)
+            for modifier in modifiers.reversed() {
+                flags.remove(modifier.flag)
+                guard let event = CGEvent(keyboardEventSource: source,
+                                          virtualKey: modifier.keyCode,
+                                          keyDown: false) else {
+                    completion(.failure(.shellFailed("Could not release the global ChatGPT Voice shortcut event.")))
+                    return
+                }
+                event.flags = flags
+                post(event)
+            }
+            completion(.success(()))
         }
     }
 

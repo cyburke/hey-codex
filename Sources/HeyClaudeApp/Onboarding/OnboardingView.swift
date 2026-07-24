@@ -79,8 +79,8 @@ struct OnboardingView: View {
         scaffold {
             VStack(spacing: 0) {
                 MascotView(mascot: MascotCatalog.byID("classic")).frame(width: 66, height: 41)
-                Text("Hey Claude").font(gs(28, .medium)).tracking(-0.6).padding(.top, 24)
-                Text("Talk to launch Claude Code.").font(gs(14)).foregroundStyle(inkSoft).padding(.top, 11)
+                Text("Hey Codex").font(gs(28, .medium)).tracking(-0.6).padding(.top, 24)
+                Text("Talk to start Codex Voice.").font(gs(14)).foregroundStyle(inkSoft).padding(.top, 11)
             }
         } footer: {
             actionButton("Get started") { model.goToMic() }
@@ -92,8 +92,8 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 Image(systemName: "mic.fill").font(.system(size: 26, weight: .medium))
                     .accessibilityHidden(true)
-                Text("Launch Claude with your voice").font(gs(22, .medium)).tracking(-0.4).padding(.top, 22)
-                Text("Hey Claude waits quietly for the wake word, then opens Claude Code.")
+                Text("Start Codex Voice with your voice").font(gs(22, .medium)).tracking(-0.4).padding(.top, 22)
+                Text("Hey Codex waits quietly for the wake word, then sends your configured ChatGPT Voice shortcut.")
                     .font(gs(14)).foregroundStyle(inkSoft).multilineTextAlignment(.center)
                     .frame(maxWidth: 300).padding(.top, 12)
             }
@@ -220,7 +220,7 @@ struct OnboardingView: View {
                 MascotView(mascot: MascotCatalog.byID("classic")).frame(width: 66, height: 41)
                     .opacity(model.flying ? 0 : 1)   // hand off to the flying mascot
                 Text("You\u{2019}re all set").font(gs(28, .medium)).tracking(-0.4).padding(.top, 22)
-                Text("Say \u{201C}Hey Claude\u{201D} anytime to launch Claude Code.")
+                Text("Say \u{201C}Hey Codex\u{201D} anytime to start Codex Voice.")
                     .font(gs(14)).foregroundStyle(inkSoft).multilineTextAlignment(.center)
                     .frame(maxWidth: 320).padding(.top, 12)
             }

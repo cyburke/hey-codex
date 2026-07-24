@@ -1,5 +1,11 @@
-Hey Claude
+Hey Codex
 Copyright (c) 2026 lilmelon77
+
+Hey Codex is a modified GPL-3.0 fork of littlemelon77/hey-claude:
+  https://github.com/littlemelon77/hey-claude
+Changes include replacing Claude-specific behavior with a local ChatGPT Voice
+shortcut helper and a macOS menu-bar interface. The original copyright and
+GPL-3.0 terms are preserved.
 
 This product is licensed under the GNU General Public License v3.0 (see LICENSE).
 It includes and/or builds upon the following third-party components, each under

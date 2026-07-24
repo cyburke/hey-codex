@@ -1,105 +1,139 @@
-import SwiftUI
 import AppKit
-import Observation
-import HeyClaudeKit
-import Sparkle
 
-/// Hey Claude — pure AppKit entry point: a plain `NSApplication` in `.accessory`
-/// mode with an `NSStatusItem` — NOT a SwiftUI `MenuBarExtra` and NOT a SwiftUI
-/// `App` scene.
-///
-/// Why: `MenuBarExtra` is the app's only scene, so when macOS can't place its
-/// status item (full menu bar, or launch-throttling) it removes the item and the
-/// whole app self-terminates. A SwiftUI `App` with an inert `Settings` scene +
-/// `NSApplicationDelegateAdaptor` turned out not to host an `NSStatusItem`
-/// reliably either. A bare AppKit status-item app is the proven, robust pattern
-/// (Bartender/iStat): the item just hides if there's no room; the app keeps running.
+/// Hey Codex is intentionally an accessory/menu-bar app: it has no floating
+/// notch or overlay and never takes focus from the current app.
 @main
 @MainActor
-enum HeyClaudeMain {
-    /// Strong reference for the app's lifetime — `NSApplication.delegate` is weak.
+enum HeyCodexMain {
     static var delegate: AppDelegate?
 
     static func main() {
         let app = NSApplication.shared
-        let d = AppDelegate()
-        delegate = d
-        app.delegate = d
-        app.setActivationPolicy(.accessory)   // menu-bar agent: no Dock icon, no app menu
+        let delegate = AppDelegate()
+        self.delegate = delegate
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
         app.run()
     }
 }
 
-/// Owns onboarding, Settings/retrain windows, and the voice-pipeline lifecycle.
-/// There is NO menu-bar status item — the notch island is the app's sole surface.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = AppController()
-    private var onboarding: OnboardingWindowController?
-    private var preferences: PreferencesWindowController?
-    private var retrain: RetrainWindowController?
-    private var pushToTalk: PushToTalkController?
-    // Strong ref required — NSApplication.delegate is weak, so this would otherwise
-    // be released immediately after applicationDidFinishLaunching returns.
-    private var updaterController: SPUStandardUpdaterController?
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private var settingsWindow: SettingsWindowController?
+    private var firstRunSetupWindow: FirstRunSetupWindowController?
+    private let menu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Sparkle auto-updater. Only starts when a real EdDSA public key is present —
-        // the placeholder in Info.plist causes Sparkle to hard-error at startup, so
-        // we guard here to keep dev builds clean until keys are generated (see README
-        // or scripts/Info.plist for key-generation instructions).
-        let pubKey = Bundle.main.infoDictionary?["SUPublicEDKey"] as? String ?? ""
-        if !pubKey.isEmpty && !pubKey.hasPrefix("REPLACE_") {
-            let uc = SPUStandardUpdaterController(
-                startingUpdater: true,
-                updaterDelegate: nil,
-                userDriverDelegate: nil
-            )
-            updaterController = uc
-            controller.onCheckForUpdates = { [weak uc] in uc?.checkForUpdates(nil) }
+        if let image = NSImage(systemSymbolName: "dot.radiowaves.left.and.right", accessibilityDescription: "Hey Codex listener") {
+            image.isTemplate = true
+            statusItem.button?.image = image
         }
-        // Onboarding owns its own window; the controller triggers it on first run.
-        let ob = OnboardingWindowController(controller: controller)
-        onboarding = ob
-        controller.onNeedsOnboarding = { [weak ob] in ob?.show() }
-
-        // Settings dashboard owns its own window, opened from the notch control panel.
-        let prefs = PreferencesWindowController(controller: controller)
-        preferences = prefs
-        controller.onOpenSettings = { [weak prefs] in prefs?.show() }
-
-        // Wake-word re-training (Settings ▸ Voice) opens onboarding's train step in
-        // a dedicated retrain-only window.
-        let rt = RetrainWindowController(controller: controller)
-        retrain = rt
-        // Open retrain over the Settings window (it's launched from Settings ▸ Voice)
-        // so it lands at the same position and size instead of re-centering elsewhere.
-        controller.onRetrainRequested = { [weak rt, weak prefs] in
-            rt?.show(matchingFrame: prefs?.currentFrame)
-        }
-
-        // No menu-bar status item. The notch island is the app's only, always-on
-        // surface — it carries mute, target, Recent, failures, mic recovery, Settings
-        // and Quit (when mic is denied it stays visible and tappable to recover, so
-        // the app is never unreachable). This also removes the fragile NSStatusItem
-        // placement dance the menu-bar item needed on macOS 26.
-        controller.start()
-
-        // Push-to-talk global hotkey — coexists with the wake word. Independent of
-        // the audio pipeline, so it's wired here regardless of onboarding state and
-        // stays inert until Input Monitoring is granted (Settings ▸ Voice). Default
-        // key is bare Right Option (collision-proof against Wispr Flow).
-        let ptt = PushToTalkController(controller: controller, key: controller.settings.pushToTalkKey)
-        controller.pushToTalk = ptt
-        pushToTalk = ptt
-        if controller.settings.pushToTalkEnabled { ptt.start() }
+        statusItem.button?.toolTip = "Hey Codex"
+        statusItem.menu = menu
+        menu.delegate = self
+        controller.onStatusChange = { [weak self] in self?.refreshMenu() }
+        beginLaunchFlow()
+        refreshMenu()
     }
 
-    /// Re-open while already running (double-click in Finder / `open` command).
-    /// The app only runs when onboarding is complete — closing the onboarding
-    /// window quits the app — so always route to Settings.
+    func menuNeedsUpdate(_ menu: NSMenu) { refreshMenu() }
+
+    private func refreshMenu() {
+        menu.removeAllItems()
+        let state = NSMenuItem(title: controller.status.menuText, action: nil, keyEquivalent: "")
+        state.isEnabled = false
+        menu.addItem(state)
+        menu.addItem(.separator())
+
+        if !controller.isArmed {
+            menu.addItem(item("Re-arm Voice", #selector(rearmVoice)))
+        }
+        let endVoice = item("End ChatGPT Voice & Re-arm", #selector(endVoiceSession))
+        endVoice.isEnabled = !controller.isArmed
+        menu.addItem(endVoice)
+        menu.addItem(.separator())
+        if controller.needsFirstRunSetup {
+            menu.addItem(item("Complete Setup…", #selector(openFirstRunSetup)))
+            menu.addItem(item("Enable ChatGPT Voice Shortcut…", #selector(enableVoiceShortcut)))
+            menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
+        }
+        menu.addItem(item("Settings…", #selector(openSettings)))
+        menu.addItem(item("Updates…", #selector(showUpdates)))
+        menu.addItem(.separator())
+        let privacy = NSMenuItem(title: "All listening stays on this Mac", action: nil, keyEquivalent: "")
+        privacy.isEnabled = false
+        menu.addItem(privacy)
+        menu.addItem(item("Quit Hey Codex", #selector(quit)))
+
+        let name: String
+        if !controller.isListening {
+            name = "pause.circle"
+        } else if controller.isArmed {
+            name = "dot.radiowaves.left.and.right"
+        } else {
+            name = "lock.fill"
+        }
+        if let image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex listener") {
+            image.isTemplate = true
+            statusItem.button?.image = image
+        }
+    }
+
+    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
+        NSMenuItem(title: title, action: action, keyEquivalent: "")
+    }
+
+    @objc private func rearmVoice() { controller.rearmVoice() }
+    @objc private func endVoiceSession() { controller.endVoiceSession() }
+    @objc private func openFirstRunSetup() { showFirstRunSetup() }
+    @objc private func enableVoiceShortcut() { controller.requestVoiceShortcutPermission() }
+    @objc private func testVoiceShortcut() { controller.testVoiceShortcut() }
+    @objc private func quit() { NSApplication.shared.terminate(nil) }
+
+    @objc private func showUpdates() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development build"
+        let alert = NSAlert()
+        alert.messageText = "Hey Codex \(version)"
+        alert.informativeText = "This local build does not contact the internet or install updates automatically. Update delivery will be enabled only after signed, notarized releases are configured and tested."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc private func openSettings() {
+        let window = settingsWindow ?? SettingsWindowController(controller: controller)
+        settingsWindow = window
+        window.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func beginLaunchFlow() {
+        // Do not request microphone permission while the app is launching.
+        // The first-run window owns that explicit, visible user action.
+        if controller.isMicrophoneAuthorized {
+            controller.startListening()
+            if controller.needsFirstRunSetup { showFirstRunSetup() }
+        } else {
+            showFirstRunSetup()
+        }
+    }
+
+    private func showFirstRunSetup() {
+        let window = firstRunSetupWindow ?? FirstRunSetupWindowController(controller: controller) { [weak self] in
+            self?.firstRunSetupWindow = nil
+            self?.refreshMenu()
+        }
+        firstRunSetupWindow = window
+        window.showWindowOnTop()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        controller.onOpenSettings?()
+        if controller.needsFirstRunSetup {
+            showFirstRunSetup()
+        } else {
+            openSettings()
+        }
         return true
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 import CSherpaOnnx
 
-/// Wraps the sherpa-onnx online keyword spotter for the "hey claude" wake word.
+/// Wraps the sherpa-onnx online keyword spotter for the "hey codex" wake word.
 public final class WakeWordEngine {
     public enum Error: Swift.Error { case missingModelFile(String) }
 
@@ -9,7 +9,7 @@ public final class WakeWordEngine {
 
     /// - Parameters:
     ///   - modelDir: directory of the KWS zipformer model (encoder/decoder/joiner + tokens.txt).
-    ///   - keywordsFile: tokenized keywords file containing the "hey claude" entry.
+    ///   - keywordsFile: tokenized keywords file containing the "hey codex" entry.
     ///   - keywordsThreshold: per-keyword trigger gate. Lower fires more eagerly.
     ///   - keywordsScore: per-keyword boost added to keyword-path hypotheses
     ///     during the modified beam search — it keeps the keyword path alive in
@@ -92,4 +92,8 @@ public final class WakeWordEngine {
         }
         return false
     }
+
+    /// Discards an in-progress utterance without producing a result. Used when
+    /// a repeated launch phrase takes priority over the close detector.
+    public func reset() { spotter.reset() }
 }

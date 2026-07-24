@@ -191,7 +191,7 @@ final class OnboardingModel {
     /// The exact words to say (shown big, in quotes). The third rep gives a real
     /// example sentence rather than asking the user to improvise.
     var trainingPhrase: String {
-        samples.count < 2 ? "Hey Claude" : "Hey Claude, open my project"
+        samples.count < 2 ? "Hey Codex" : "Hey Codex"
     }
 
     /// The small action label under the phrase.

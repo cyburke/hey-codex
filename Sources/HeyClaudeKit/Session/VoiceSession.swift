@@ -27,6 +27,7 @@ public final class VoiceSession {
     private let registry: CommandRegistry
     private let execute: @Sendable (Command, String?) -> Void
     private let observe: (@Sendable (Outcome) -> Void)?
+    private let activationLatch: VoiceActivationLatch?
     private var lastFireTime: Double = -.greatestFiniteMagnitude
 
     public init(transcribe: @escaping @Sendable ([Float]) -> String,
@@ -34,13 +35,15 @@ public final class VoiceSession {
                 cooldownSeconds: Double,
                 registry: CommandRegistry,
                 execute: @escaping @Sendable (Command, String?) -> Void,
-                observe: (@Sendable (Outcome) -> Void)? = nil) {
+                observe: (@Sendable (Outcome) -> Void)? = nil,
+                activationLatch: VoiceActivationLatch? = nil) {
         self.transcribe = transcribe
         self.now = now
         self.cooldownSeconds = cooldownSeconds
         self.registry = registry
         self.execute = execute
         self.observe = observe
+        self.activationLatch = activationLatch
     }
 
     /// Handle one captured post-wake utterance.
@@ -49,16 +52,27 @@ public final class VoiceSession {
         guard t - lastFireTime >= cooldownSeconds else { return }
         lastFireTime = t
         let transcript = transcribe(utterance)
-        let command = WakePrefixStripper.command(from: transcript)   // strip "hey claude"
+        let command = WakePrefixStripper.command(from: transcript)   // strip "hey codex"
         let resolution = registry.resolve(transcript: command)
-        observe?(Outcome(transcript: transcript, strippedCommand: command, resolved: resolution))
         if let r = resolution {
+            // The Voice shortcut is a toggle. Never post it twice merely because
+            // the user repeats the wake phrase while a Voice session is running.
+            // This is a local latch, not claimed ChatGPT session detection.
+            if case .sendCodexVoiceShortcut = r.command.kind,
+               let activationLatch,
+               !activationLatch.consumeIfArmed() {
+                observe?(Outcome(transcript: transcript, strippedCommand: command, resolved: nil))
+                return
+            }
+            observe?(Outcome(transcript: transcript, strippedCommand: command, resolved: resolution))
             execute(r.command, r.prompt)
+        } else {
+            observe?(Outcome(transcript: transcript, strippedCommand: command, resolved: nil))
         }
     }
 
     /// Handle a push-to-talk utterance. Unlike the wake path, the spoken text is
-    /// the *prompt itself* (no "hey claude" prefix to strip) and an empty/blank
+    /// the *prompt itself* (no "hey codex" prefix to strip) and an empty/blank
     /// transcript is a deliberate no-op — a silent hold must not launch a bare
     /// session. Non-empty text routes through the registry exactly like the wake
     /// path's freeform branch, so a spoken command trigger still works.

@@ -29,8 +29,10 @@ public enum TerminalKind: String, Codable, CaseIterable, Sendable {
 
 /// User-configurable settings. Persisted as JSON (SettingsStore).
 public struct Settings: Codable, Equatable, Sendable {
-    public var projectDirectory: String          // default working dir for `claude`
-    public var preferredTarget: LaunchTarget      // default target (terminal or editor)
+    // Legacy compatibility fields. The Hey Codex menu-bar app never launches a
+    // terminal, editor, or desktop app; it only posts the Voice shortcut.
+    public var projectDirectory: String
+    public var preferredTarget: LaunchTarget
     public var wakeKeywordsScore: Float
     public var wakeKeywordsThreshold: Float
     public var cooldownSeconds: Double            // ignore re-fires within this window
@@ -40,9 +42,9 @@ public struct Settings: Codable, Equatable, Sendable {
                                                   // when the VAD never detects silence
     public var endpointSilenceMs: Int             // trailing silence that marks end-of-
                                                   // speech (you stopped talking)
-    public var claudeExecutable: String           // "claude" or absolute path
-    public var commands: [Command]                // the voice-triggerable command registry
-    public var defaultCommandID: String           // bare "hey claude"
+    public var claudeExecutable: String
+    public var commands: [Command]
+    public var defaultCommandID: String           // bare "hey codex"
     public var promptCommandID: String            // freeform prompt fallthrough
     public var onboardingCompleted: Bool          // first-run wake enrollment + setup done
     public var mascotID: String                    // selected mascot (MascotCatalog id)
@@ -50,6 +52,14 @@ public struct Settings: Codable, Equatable, Sendable {
     public var mascotIdleAnimations: Bool          // ambient idle mascot motion (blink/breathe/gestures)
     public var pushToTalkEnabled: Bool             // hold-to-talk hotkey active
     public var pushToTalkKey: PushToTalkKey         // which key triggers it
+    /// Displayed phrase that was locally enrolled into KeywordStore.
+    public var wakePhrase: String
+    /// Dedicated ChatGPT Voice shortcut posted by the helper after a wake.
+    public var voiceShortcut: VoiceShortcut
+    /// True only after the user has explicitly granted permission for Hey Codex
+    /// to post the configured Voice shortcut. This drives the focused first-run
+    /// setup window; it is separate from wake-phrase enrollment.
+    public var voiceShortcutSetupCompleted: Bool
 
     public init(projectDirectory: String = NSHomeDirectory(),
                 preferredTarget: LaunchTarget = .terminal(.terminalApp),
@@ -60,14 +70,17 @@ public struct Settings: Codable, Equatable, Sendable {
                 endpointSilenceMs: Int = 800,
                 claudeExecutable: String = "claude",
                 commands: [Command] = Command.seededDefaults,
-                defaultCommandID: String = "claude-code",
-                promptCommandID: String = "claude-code",
+                defaultCommandID: String = "codex-voice",
+                promptCommandID: String = "codex-voice",
                 onboardingCompleted: Bool = false,
                 mascotID: String = "classic",
                 mascotColorHex: String = "#D87757",
                 mascotIdleAnimations: Bool = true,
                 pushToTalkEnabled: Bool = true,
-                pushToTalkKey: PushToTalkKey = .rightOption) {
+                pushToTalkKey: PushToTalkKey = .rightOption,
+                wakePhrase: String = "Hey Codex",
+                voiceShortcut: VoiceShortcut = .default,
+                voiceShortcutSetupCompleted: Bool = false) {
         self.projectDirectory = projectDirectory
         self.preferredTarget = preferredTarget
         self.wakeKeywordsScore = wakeKeywordsScore
@@ -85,16 +98,17 @@ public struct Settings: Codable, Equatable, Sendable {
         self.mascotIdleAnimations = mascotIdleAnimations
         self.pushToTalkEnabled = pushToTalkEnabled
         self.pushToTalkKey = pushToTalkKey
+        self.wakePhrase = WakePhrase.normalize(wakePhrase) ?? "Hey Codex"
+        self.voiceShortcut = voiceShortcut
+        self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
     }
 
     /// Pre-`LaunchTarget` settings stored the default destination as a bare
     /// `TerminalKind` under `preferredTerminal`. Migrated into `preferredTarget`.
     private enum LegacyKeys: String, CodingKey { case preferredTerminal }
 
-    /// Custom decoding so legacy settings JSON still loads: missing command keys
-    /// fall back to the seeded defaults, the old `preferredTerminal` migrates to
-    /// `preferredTarget`, and the retired `claude-desktop` routing is dropped
-    /// (the app is now Claude-Code-only — see design §5.6).
+    /// Custom decoding accepts old settings data, but all old routing is replaced
+    /// with the one Hey Codex Voice-shortcut command.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.projectDirectory = try container.decode(String.self, forKey: .projectDirectory)
@@ -117,45 +131,26 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? 800
         self.claudeExecutable = try container.decode(String.self, forKey: .claudeExecutable)
 
-        let decodedCommands = try container.decodeIfPresent([Command].self, forKey: .commands)
-            ?? Command.seededDefaults
-        let withoutDesktop = decodedCommands.filter { $0.id != "claude-desktop" }
-        let base = withoutDesktop.isEmpty ? Command.seededDefaults : withoutDesktop
-        // Backfill editor integration onto commands persisted before the field
-        // existed, using the seeded tool definition for the same id. Without this
-        // a migrated `claude-code` has no `editorIntegration`, so an editor target
-        // silently falls back to a terminal. (design §5.6 migration)
-        let seededByID = Dictionary(Command.seededDefaults.map { ($0.id, $0) },
-                                    uniquingKeysWith: { first, _ in first })
-        self.commands = base.map { cmd in
-            guard cmd.editorIntegration == nil,
-                  let ei = seededByID[cmd.id]?.editorIntegration else { return cmd }
-            var c = cmd; c.editorIntegration = ei; return c
-        }
-
-        let rawDefault = try container.decodeIfPresent(String.self, forKey: .defaultCommandID)
-            ?? "claude-code"
-        self.defaultCommandID = (rawDefault == "claude-desktop") ? "claude-code" : rawDefault
-        let rawPrompt = try container.decodeIfPresent(String.self, forKey: .promptCommandID)
-            ?? "claude-code"
-        self.promptCommandID = (rawPrompt == "claude-desktop") ? "claude-code" : rawPrompt
-        // (legacy `islandVisible` keys in old settings JSON are ignored — the island
-        // is always present now.)
+        self.commands = Command.seededDefaults
+        self.defaultCommandID = "codex-voice"
+        self.promptCommandID = "codex-voice"
         self.onboardingCompleted = try container.decodeIfPresent(Bool.self, forKey: .onboardingCompleted)
             ?? false
         self.mascotID = try container.decodeIfPresent(String.self, forKey: .mascotID)
             ?? "classic"
         self.mascotColorHex = try container.decodeIfPresent(String.self, forKey: .mascotColorHex)
             ?? "#D87757"
-        // Default ON so existing installs get the delight; system Reduce Motion still overrides.
         self.mascotIdleAnimations = try container.decodeIfPresent(Bool.self, forKey: .mascotIdleAnimations)
             ?? true
-        // Default ON so the feature is discoverable; it stays inert until the
-        // user grants Input Monitoring (PushToTalkController gates on permission).
         self.pushToTalkEnabled = try container.decodeIfPresent(Bool.self, forKey: .pushToTalkEnabled)
             ?? true
         self.pushToTalkKey = try container.decodeIfPresent(PushToTalkKey.self, forKey: .pushToTalkKey)
             ?? .rightOption
+        self.wakePhrase = WakePhrase.normalize(try container.decodeIfPresent(String.self, forKey: .wakePhrase)
+            ?? "Hey Codex") ?? "Hey Codex"
+        self.voiceShortcut = try container.decodeIfPresent(VoiceShortcut.self, forKey: .voiceShortcut) ?? .default
+        self.voiceShortcutSetupCompleted = try container.decodeIfPresent(Bool.self, forKey: .voiceShortcutSetupCompleted)
+            ?? false
     }
 
     public static let `default` = Settings()

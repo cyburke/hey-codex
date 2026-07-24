@@ -41,4 +41,11 @@ final class WakeWordEngineHolder: @unchecked Sendable {
         engine = new
         lock.unlock()
     }
+
+    func reset() {
+        lock.lock()
+        let current = engine
+        lock.unlock()
+        current.reset()
+    }
 }

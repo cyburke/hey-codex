@@ -13,20 +13,20 @@ final class WakeEnrollmentTests: XCTestCase {
         XCTAssertEqual(WakeEnrollment.keywordLine(from: [" HE", "", "  ", "Y"]), "▁HE Y")
     }
 
-    func test_isPlausibleWake_acceptsClaudeRejectsGlitch() {
-        XCTAssertTrue(WakeEnrollment.isPlausibleWake(tokens: [" HE", "Y", " C", "LO", "U", "D"]))
+    func test_isPlausibleWake_acceptsMultiTokenPhraseRejectsGlitch() {
+        XCTAssertTrue(WakeEnrollment.isPlausibleWake(tokens: [" HE", "Y", " CO", "DE", "X"]))
         XCTAssertFalse(WakeEnrollment.isPlausibleWake(tokens: [" OUT"]))   // the glitch we saw
     }
 
     func test_derivedLines_dedupesAgreeingSamples() {
         let a = [" HE", "Y", " C", "LO", "U", "D"]
-        XCTAssertEqual(WakeEnrollment.derivedLines(isolated: [a, a]), ["▁HE Y ▁C LO U D"])
+        XCTAssertEqual(WakeEnrollment.derivedLines(samples: [a, a]), ["▁HE Y ▁C LO U D"])
     }
 
     func test_derivedLines_keepsDistinctVariants() {
         let cloud = [" HE", "Y", " C", "LO", "U", "D"]
         let claude = [" HE", "Y", " C", "LA", "U", "DE"]
-        XCTAssertEqual(WakeEnrollment.derivedLines(isolated: [cloud, claude]),
+        XCTAssertEqual(WakeEnrollment.derivedLines(samples: [cloud, claude]),
                        ["▁HE Y ▁C LO U D", "▁HE Y ▁C LA U DE"])
     }
 
@@ -41,7 +41,7 @@ final class WakeEnrollmentTests: XCTestCase {
             decode: { _ in [" HE", "Y", " C", "LO", "U", "D"] },
             fires: { _, _, _ in true })
         let r = enroll.enroll(samples: [sample(.isolated, 1), sample(.isolated, 2), sample(.natural, 3)])
-        XCTAssertEqual(r.keywordLines, ["▁HE Y ▁C LO U D", "▁HE Y ▁C LA U DE"]) // derived + fallback
+        XCTAssertEqual(r.keywordLines, ["▁HE Y ▁C LO U D"]) // derived from recordings only
         XCTAssertEqual(r.threshold, 0.25)        // highest threshold that fires all
         XCTAssertTrue(r.allFired)
         XCTAssertFalse(r.usedFallbackOnly)
@@ -57,10 +57,23 @@ final class WakeEnrollmentTests: XCTestCase {
         XCTAssertTrue(r.allFired)
     }
 
+    func test_enroll_keepsNaturalSpeechTokenVariant() {
+        let enroll = WakeEnrollment(
+            decode: { audio in
+                audio.first == 3 ? [" A", " CO", "DE", "X"]
+                                 : [" HE", "Y", " CO", "DE", "X"]
+            },
+            fires: { lines, _, _ in lines.contains("▁A ▁CO DE X") })
+        let r = enroll.enroll(samples: [sample(.isolated, 1), sample(.isolated, 2), sample(.natural, 3)])
+        XCTAssertTrue(r.keywordLines.contains("▁A ▁CO DE X"))
+        XCTAssertTrue(r.allFired)
+    }
+
     func test_enroll_fallbackOnly_whenDecodeYieldsNothing() {
         let enroll = WakeEnrollment(
             decode: { _ in [] },                 // model emitted nothing usable
-            fires: { lines, _, _ in lines == ["▁HE Y ▁C LA U DE"] })
+            fires: { lines, _, _ in lines == ["▁HE Y ▁C LA U DE"] },
+            fallbackLine: "▁HE Y ▁C LA U DE")
         let r = enroll.enroll(samples: [sample(.isolated, 1), sample(.isolated, 2)])
         XCTAssertEqual(r.keywordLines, ["▁HE Y ▁C LA U DE"])   // fallback only
         XCTAssertTrue(r.usedFallbackOnly)

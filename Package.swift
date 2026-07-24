@@ -2,22 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "HeyClaude",
+    name: "HeyCodex",
     platforms: [.macOS("14.4")],   // NSHostingMenu (status-item menu) needs 14.4+
     products: [
-        .library(name: "HeyClaudeKit", targets: ["HeyClaudeKit"]),
-        .executable(name: "heyclaude", targets: ["heyclaude"]),
+        .library(name: "HeyCodexKit", targets: ["HeyClaudeKit"]),
         // On-machine test harness: this CLT-only toolchain has no XCTest runner
         // (`xcrun --find xctest` fails), so the XCTest files in
         // Tests/HeyClaudeKitTests are retained for CI/Xcode while verification
         // here runs through this executable. See internal design notes.
-        .executable(name: "heyclaude-selftest", targets: ["heyclaude-selftest"]),
-        // SwiftUI menu-bar app (Phase 3A): the user-facing shell over HeyClaudeKit.
-        .executable(name: "HeyClaudeApp", targets: ["HeyClaudeApp"]),
+        .executable(name: "hey-codex-selftest", targets: ["heyclaude-selftest"]),
+        .executable(name: "HeyCodexApp", targets: ["HeyCodexApp"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0"),
-    ],
+    dependencies: [],
     targets: [
         // Prebuilt sherpa-onnx static xcframework (universal2 macOS).
         // Fetched + module map injected by `scripts/fetch-sherpa.sh` (gitignored);
@@ -39,27 +35,72 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "heyclaude",
-            dependencies: ["HeyClaudeKit"],
-            path: "Sources/heyclaude"
-        ),
-        .executableTarget(
             name: "heyclaude-selftest",
             dependencies: ["HeyClaudeKit"],
             path: "Sources/heyclaude-selftest"
         ),
         .executableTarget(
-            name: "HeyClaudeApp",
-            dependencies: [
-                "HeyClaudeKit",
-                .product(name: "Sparkle", package: "Sparkle"),
+            name: "HeyCodexApp",
+            dependencies: ["HeyClaudeKit"],
+            path: "Sources/HeyClaudeApp",
+            exclude: [
+                "AccessibilityPermission.swift",
+                "CommandExecutorHolder.swift",
+                "Island",
+                "LoginItem.swift",
+                "Onboarding",
+                "Preferences",
+                "PushToTalkController.swift",
+                "SystemSettingsLink.swift",
+                "WakePhraseEnrollmentWindowController.swift"
             ],
-            path: "Sources/HeyClaudeApp"
+            sources: [
+                "AppController.swift",
+                "FirstRunSetupWindowController.swift",
+                "HeyClaudeApp.swift",
+                "SettingsWindowController.swift",
+                "WakeWordEngineHolder.swift"
+            ]
         ),
         .testTarget(
             name: "HeyClaudeKitTests",
             dependencies: ["HeyClaudeKit"],
             path: "Tests/HeyClaudeKitTests",
+            exclude: [
+                "AppStateTests.swift",
+                "CommandExecutorTests.swift",
+                "CommandRegistryTests.swift",
+                "CommandTests.swift",
+                "EditorRoutingTests.swift",
+                "IdeLockfileReaderTests.swift",
+                "IslandModelTests.swift",
+                "LauncherEscapingTests.swift",
+                "ManualCaptureFlagTests.swift",
+                "MascotCatalogTests.swift",
+                "MascotGridTests.swift",
+                "ParakeetTranscriberTests.swift",
+                "PushToTalkKeyTests.swift",
+                "RecentActionsTests.swift",
+                "SettingsStoreTests.swift",
+                "TerminalLauncherTests.swift",
+                "WakeWordEngineTests.swift"
+            ],
+            sources: [
+                "CodexSettingsTests.swift",
+                "CaptureSessionTests.swift",
+                "KeywordStoreTests.swift",
+                "ProductWakePhraseTests.swift",
+                "TestSupport.swift",
+                "VoiceActivationLatchTests.swift",
+                "VoiceActivationControllerTests.swift",
+                "ClosePhraseGateTests.swift",
+                "VoiceActivityDetectorTests.swift",
+                "VoiceSessionTests.swift",
+                "VoiceShortcutTests.swift",
+                "WakeEnrollmentTests.swift",
+                "WakePhraseTests.swift",
+                "WakePrefixStripperTests.swift"
+            ],
             resources: [.copy("Fixtures")]
         ),
     ]

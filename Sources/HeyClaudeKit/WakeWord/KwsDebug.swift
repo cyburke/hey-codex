@@ -9,6 +9,18 @@ import CSherpaOnnx
 public enum KwsDebug {
     public static func decodeTokens(modelDir: URL, samples: [Float]) -> (text: String, tokens: [String]) {
         func path(_ n: String) -> String { modelDir.appendingPathComponent(n).path }
+        // The C++ wrapper force-unwraps a failed recognizer allocation. Keep
+        // malformed resource paths in Swift so an optional calibration feature
+        // can report an unusable sample instead of terminating the whole app.
+        let required = [
+            "encoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "decoder-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "joiner-epoch-12-avg-2-chunk-16-left-64.onnx",
+            "tokens.txt",
+        ]
+        guard required.allSatisfy({ FileManager.default.fileExists(atPath: path($0)) }) else {
+            return ("", [])
+        }
         let transducer = sherpaOnnxOnlineTransducerModelConfig(
             encoder: path("encoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
             decoder: path("decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
