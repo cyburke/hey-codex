@@ -97,9 +97,10 @@ final class AppController {
     /// Relaunch so a freshly granted Accessibility permission takes effect. The
     /// replacement is started before this instance exits so the menu bar icon
     /// does not disappear on the user mid-setup.
-    func relaunch() {
+    func relaunch(reason: String? = nil) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
+        if let reason { configuration.arguments = [reason] }
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL,
                                            configuration: configuration) { _, _ in
             Task { @MainActor in NSApp.terminate(nil) }

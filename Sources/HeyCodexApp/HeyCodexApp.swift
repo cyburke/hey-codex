@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindowController?
     private var enrollmentWindow: WakePhraseEnrollmentWindowController?
     private var setupPoll: Timer?
+    /// True in the instance started by an automatic post-grant relaunch. It stops
+    /// a failed grant from restarting the app in a loop.
+    private let didRelaunchForAccessibility =
+        CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
+    private var announceReadyWhenComplete = true
+    static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -43,9 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Show the user where Hey Codex lives, once, on the very first launch
         // with setup outstanding. An accessory app that appears silently among
         // a dozen other menu bar icons is an app nobody finds.
-        if controller.needsFirstRunSetup {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                self?.reopenMenu()
+        if controller.needsFirstRunSetup || didRelaunchForAccessibility {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self else { return }
+                self.announceReadyWhenComplete = false
+                self.reopenMenu()
             }
         }
     }
@@ -93,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .accessibilityPendingRelaunch:
             addHeading("Almost there")
             menu.addItem(action("Relaunch to Finish Setup", #selector(relaunchApp)))
-            addNote("macOS needs Hey Codex to restart before it can use the permission.")
+            addNote("Hey Codex restarts itself to pick up the permission. Use this if it has not.")
         case .ready:
             break
         }
@@ -189,6 +197,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.setupPoll?.invalidate()
                     self.setupPoll = nil
                     self.refreshMenu()
+                    // Confirm, once, that setup finished. Otherwise the user is
+                    // left in System Settings with no idea it worked.
+                    if self.announceReadyWhenComplete {
+                        self.announceReadyWhenComplete = false
+                        self.reopenMenu()
+                    }
+                    return
+                }
+                // macOS has recorded the grant but this process was told no and
+                // never will be told otherwise. The user already did their part,
+                // so finish it for them rather than asking for another click.
+                if self.controller.setupState == .accessibilityPendingRelaunch,
+                   !self.didRelaunchForAccessibility {
+                    self.setupPoll?.invalidate()
+                    self.setupPoll = nil
+                    self.controller.relaunch(reason: Self.accessibilityRelaunchArgument)
                     return
                 }
                 self.refreshMenu()
@@ -228,12 +252,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(URL(string: "https://openai.com/chatgpt/download/")!)
     }
 
-    /// Reopen the menu so the next step is visible without the user hunting for
-    /// the icon again.
+    /// Open the status menu programmatically.
+    ///
+    /// `performClick` does not reliably show a status item's menu when the app
+    /// is not frontmost, which is exactly the situation here: the user is in
+    /// System Settings, not in Hey Codex. `popUp` does work, but refuses while
+    /// the menu is attached to the status item, so it is detached for the call.
     private func reopenMenu() {
         refreshMenu()
+        guard let button = statusItem.button else { return }
         NSApp.activate(ignoringOtherApps: true)
-        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: button.bounds.maxY + 5),
+                   in: button)
+        statusItem.menu = menu
     }
 
     @objc private func rearmVoice() { controller.rearmVoice() }
