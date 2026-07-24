@@ -78,15 +78,17 @@ public struct CommandExecutor: Sendable {
                 completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
                 return
             }
-            let frontmost = NSWorkspace.shared.frontmostApplication
-            let destination = VoiceShortcutRouting.destination(
-                frontmostBundleIdentifier: frontmost?.bundleIdentifier,
-                frontmostProcessIdentifier: frontmost?.processIdentifier ?? 0)
+            // Always post to the system HID tap, never to ChatGPT's pid — even
+            // when ChatGPT is frontmost. ChatGPT registers the Voice shortcut
+            // through Electron's globalShortcut, which on macOS is Carbon
+            // `RegisterEventHotKey` (the Codex Framework binary imports it).
+            // Carbon hot keys are dispatched by the window server off the system
+            // event stream; `CGEvent.postToPid` injects straight into a process's
+            // own event queue and bypasses that dispatch, so the hot key handler
+            // never fires. Focus is irrelevant to a Carbon hot key — the same
+            // global post reaches it whether or not ChatGPT is in front.
             func post(_ event: CGEvent) {
-                switch destination {
-                case .systemHID: event.post(tap: .cghidEventTap)
-                case .application(let pid): event.postToPid(pid_t(pid))
-                }
+                event.post(tap: .cghidEventTap)
             }
 
             // A shortcut is a physical key sequence, not simply a letter event
