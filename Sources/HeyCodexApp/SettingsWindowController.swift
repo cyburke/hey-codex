@@ -63,17 +63,26 @@ final class SettingsWindowController: NSWindowController {
         // Shortcut ---------------------------------------------------------
         root.addArrangedSubview(sectionHeader("ChatGPT Voice hotkey"))
         root.addArrangedSubview(body("This must match the Voice chat hotkey in ChatGPT exactly — Hey Codex presses it for you."))
+        // Modifiers and the key live on separate rows. Inline, the "Command"
+        // checkbox sat flush against the "Key" field label and the row read as
+        // "Command Key" — a misparse this window can least afford.
+        let modifiers = NSStackView(views: [control, option, command])
+        modifiers.orientation = .horizontal
+        modifiers.spacing = 14
+        root.addArrangedSubview(modifiers)
+
         let keyLabel = NSTextField(labelWithString: "Key")
         keyLabel.font = .systemFont(ofSize: 13)
+        keyLabel.textColor = .labelColor
         shortcutKey.alignment = .center
         shortcutKey.maximumNumberOfLines = 1
-        shortcutKey.widthAnchor.constraint(equalToConstant: 36).isActive = true
-        let shortcut = NSStackView(views: [control, option, command, keyLabel, shortcutKey,
-                                           NSButton(title: "Save", target: self,
-                                                    action: #selector(saveShortcut))])
-        shortcut.orientation = .horizontal
-        shortcut.spacing = 8
-        root.addArrangedSubview(shortcut)
+        shortcutKey.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        let saveShortcutButton = NSButton(title: "Save", target: self, action: #selector(saveShortcut))
+        let keyRow = NSStackView(views: [keyLabel, shortcutKey, saveShortcutButton])
+        keyRow.orientation = .horizontal
+        keyRow.spacing = 8
+        keyRow.setCustomSpacing(18, after: shortcutKey)
+        root.addArrangedSubview(keyRow)
 
         root.addArrangedSubview(rule())
 
@@ -99,7 +108,7 @@ final class SettingsWindowController: NSWindowController {
 
     private func reload() {
         let shortcut = controller.settings.voiceShortcut
-        shortcutKey.stringValue = shortcut.key
+        shortcutKey.stringValue = shortcut.key.uppercased()
         control.state = shortcut.control ? .on : .off
         option.state = shortcut.option ? .on : .off
         command.state = shortcut.command ? .on : .off
@@ -169,7 +178,7 @@ final class SettingsWindowController: NSWindowController {
     /// information the user needs to complete a task.
     private func hint(_ text: String) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
-        field.font = .systemFont(ofSize: 11)
+        field.font = .systemFont(ofSize: 12)
         field.textColor = .secondaryLabelColor
         field.preferredMaxLayoutWidth = 470
         field.maximumNumberOfLines = 0
@@ -181,10 +190,13 @@ final class SettingsWindowController: NSWindowController {
         super.showWindow(sender)
     }
 
+    /// A separator in a vertical NSStackView needs BOTH dimensions pinned — with
+    /// no height constraint it lays out at zero and never appears.
     private func rule() -> NSBox {
         let box = NSBox()
         box.boxType = .separator
-        box.widthAnchor.constraint(equalToConstant: 480).isActive = true
+        box.widthAnchor.constraint(equalToConstant: 484).isActive = true
+        box.heightAnchor.constraint(equalToConstant: 1).isActive = true
         return box
     }
 }
