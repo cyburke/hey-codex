@@ -233,10 +233,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let until = wakeBannerUntil, Date() < until {
                 label = "<Opening ChatGPT Voice...>"
                 tint = .systemBlue
+            } else if !controller.isVoiceStateVerified {
+                // Outstanding business, not a notification. It stays until a
+                // launch has actually been seen to work, exactly as the setup
+                // label stays until the permissions are granted.
+                label = "<Ready: click to test>"
+                tint = .systemOrange
             } else if let until = readyBannerUntil, Date() < until {
-                label = controller.isVoiceStateVerified
-                    ? "<All set. Say \u{201C}\(controller.settings.wakePhrase)\u{201D} anytime>"
-                    : "<Ready: click to test>"
+                // The one genuinely transient message: setup just finished.
+                label = "<All set. Say \u{201C}\(controller.settings.wakePhrase)\u{201D} anytime>"
                 tint = .systemGreen
             } else {
                 label = ""
