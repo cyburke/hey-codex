@@ -320,7 +320,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let status = controller.status
         let isNewWake = status == .activating && previousStatus != .activating
         previousStatus = status
-        guard isNewWake else { return }
+        // Only worth announcing before a launch has been verified. After that the
+        // icon switching to the lock already says the wake was heard, and a text
+        // banner on every single phrase is just noise.
+        guard isNewWake, !controller.isVoiceStateVerified else { return }
         readyBannerUntil = nil
         wakeBannerUntil = Date().addingTimeInterval(4)
         wakeBannerTimer?.invalidate()
