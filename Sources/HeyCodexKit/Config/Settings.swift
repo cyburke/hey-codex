@@ -64,6 +64,11 @@ public struct Settings: Codable, Equatable, Sendable {
     /// machine. Until then the helper cannot tell "Voice is closed" from
     /// "this ChatGPT build does not expose the signal", so it does not try.
     public var voicePanelDetectionProven: Bool
+    /// Whether Hey Codex may ask GitHub for the latest release version. This is
+    /// the only network request the app ever makes, and it is the only setting
+    /// that turns any network access on or off.
+    public var automaticUpdateChecks: Bool
+    public var lastUpdateCheck: Date?
 
     public init(projectDirectory: String = NSHomeDirectory(),
                 preferredTarget: LaunchTarget = .terminal(.terminalApp),
@@ -85,7 +90,9 @@ public struct Settings: Codable, Equatable, Sendable {
                 wakePhrase: String = "Hey Codex",
                 voiceShortcut: VoiceShortcut = .default,
                 voiceShortcutSetupCompleted: Bool = false,
-                voicePanelDetectionProven: Bool = false) {
+                voicePanelDetectionProven: Bool = false,
+                automaticUpdateChecks: Bool = true,
+                lastUpdateCheck: Date? = nil) {
         self.projectDirectory = projectDirectory
         self.preferredTarget = preferredTarget
         self.wakeKeywordsScore = wakeKeywordsScore
@@ -107,6 +114,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.voiceShortcut = voiceShortcut
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
         self.voicePanelDetectionProven = voicePanelDetectionProven
+        self.automaticUpdateChecks = automaticUpdateChecks
+        self.lastUpdateCheck = lastUpdateCheck
     }
 
     /// Pre-`LaunchTarget` settings stored the default destination as a bare
@@ -159,6 +168,9 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? false
         self.voicePanelDetectionProven = try container.decodeIfPresent(Bool.self, forKey: .voicePanelDetectionProven)
             ?? false
+        self.automaticUpdateChecks = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks)
+            ?? true
+        self.lastUpdateCheck = try container.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
     }
 
     public static let `default` = Settings()

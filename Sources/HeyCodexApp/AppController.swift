@@ -40,6 +40,8 @@ final class AppController {
     private let keywords = KeywordStore()
     private let trust: VoiceDetectionTrust
     private var panelWatch: Timer?
+    private(set) var availableUpdate: (version: String, url: URL)?
+    var onUpdateStatus: ((UpdateStatus) -> Void)?
     private var audio: AudioCapture?
     private var wake: WakeWordEngineHolder?
 
@@ -305,6 +307,61 @@ final class AppController {
         stopPipeline()
         guard isMicrophoneAuthorized else { return }
         startListening()
+    }
+
+    var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "development build"
+    }
+
+    /// Ask GitHub for the latest release tag. This is the only network request
+    /// the app makes. An automatic check is skipped entirely when the user has
+    /// turned it off, so "off" means no request rather than a silent one.
+    func checkForUpdates(userInitiated: Bool) {
+        if !userInitiated {
+            guard settings.automaticUpdateChecks,
+                  UpdateCheck.isDue(lastCheck: settings.lastUpdateCheck, now: Date())
+            else { return }
+        }
+        var stamped = settings
+        stamped.lastUpdateCheck = Date()
+        try? SettingsStore().save(stamped)
+        settings = stamped
+
+        let current = appVersion
+        var request = URLRequest(url: UpdateCheck.releasesAPI)
+        request.timeoutInterval = 10
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            let status: UpdateStatus
+            if let error {
+                status = .failed(error.localizedDescription)
+            } else if let data {
+                let parsed = UpdateCheck.parse(data)
+                status = UpdateCheck.status(currentVersion: current,
+                                            latestTag: parsed.tag,
+                                            releaseURL: parsed.url)
+            } else {
+                status = .failed("No response from GitHub.")
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if case .available(let version, let url) = status {
+                    self.availableUpdate = (version, url)
+                } else {
+                    self.availableUpdate = nil
+                }
+                self.onStatusChange?()
+                self.onUpdateStatus?(status)
+            }
+        }.resume()
+    }
+
+    func setAutomaticUpdateChecks(_ enabled: Bool) throws {
+        var updated = settings
+        updated.automaticUpdateChecks = enabled
+        try SettingsStore().save(updated)
+        settings = updated
     }
 
     private func sendLaunchShortcut() {

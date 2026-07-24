@@ -1,0 +1,48 @@
+name: Bug report
+description: Something is not working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not attach recordings or transcripts unless you are happy for them to be public.
+  - type: input
+    id: version
+    attributes:
+      label: Hey Codex version
+      description: Shown in the menu bar under About Hey Codex.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.2"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: menu
+    attributes:
+      label: What did the menu bar item say at the time?
+      placeholder: "Listening locally"
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions
+      options:
+        - label: Microphone is enabled for Hey Codex
+        - label: Accessibility is enabled for Hey Codex
+  - type: input
+    id: hotkey
+    attributes:
+      label: Voice hotkey configured in BOTH apps
+      description: The chord set in ChatGPT and in Hey Codex Settings. They must match.
+      placeholder: "Control-Option-V"

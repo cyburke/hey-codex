@@ -60,7 +60,9 @@ This is treated as a bonus, never a dependency. Until Hey Codex has actually see
 
 ## Privacy
 
-Wake-word detection runs entirely on your Mac using a bundled offline model. No audio, no transcripts, and no wake events leave your machine. There is no analytics, no telemetry, and no network code in the app at all — it never checks for updates on its own.
+Wake-word detection runs entirely on your Mac using a bundled offline model. No audio, no transcripts, and no wake events ever leave your machine. There is no analytics and no telemetry.
+
+Hey Codex makes exactly one kind of network request: a once-a-day check with GitHub asking whether a newer release exists. It sends nothing about you. Turn off **Check for updates automatically** in Settings and the app makes no network requests at all.
 
 The two permissions it asks for are the two it needs: **Microphone**, to hear the phrase, and **Accessibility**, to press the hotkey. You can revoke either in System Settings at any time.
 
@@ -76,7 +78,7 @@ If someone with an Apple Developer ID wants to contribute a notarized build, ope
 
 ## Known limitations
 
-- **Updates are manual.** Re-download, or `brew upgrade hey-codex`.
+- **Updates are not automatic.** Hey Codex tells you when a new release exists, but you install it yourself by re-downloading or running `brew upgrade hey-codex`.
 - **Upgrading may re-prompt for permissions.** Because the app isn't signed with a stable Apple identity, macOS can see a new build as a new app and ask for Microphone and Accessibility again. Annoying, not broken.
 - Like every wake-word tool, it can occasionally miss the phrase or fire on something that sounds close.
 

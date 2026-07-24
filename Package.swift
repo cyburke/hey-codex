@@ -68,6 +68,7 @@ let package = Package(
                 "VoiceDetectionTrustTests.swift",
                 "VoiceActivityDetectorTests.swift",
                 "VoiceSessionTests.swift",
+                "UpdateCheckTests.swift",
                 "VoiceShortcutTests.swift",
                 "WakeEnrollmentTests.swift",
                 "WakePhraseTests.swift",

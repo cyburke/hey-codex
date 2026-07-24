@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.onStatusChange = { [weak self] in self?.refreshMenu() }
         beginLaunchFlow()
         refreshMenu()
+        controller.checkForUpdates(userInitiated: false)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) { refreshMenu() }
@@ -46,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let state = NSMenuItem(title: controller.status.menuText, action: nil, keyEquivalent: "")
         state.isEnabled = false
         menu.addItem(state)
+        if let update = controller.availableUpdate {
+            let item = item("Update available: \(update.version)", #selector(openUpdate))
+            item.attributedTitle = NSAttributedString(
+                string: "Update available: \(update.version)",
+                attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)])
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
 
         // Voice normally ends in ChatGPT's own panel and Hey Codex re-arms
@@ -73,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item(phraseTitle, #selector(enrollWakePhrase)))
         menu.addItem(item("Settings…", #selector(openSettings)))
         menu.addItem(.separator())
+        menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(item("Report an Issue…", #selector(reportIssue)))
         menu.addItem(item("About Hey Codex", #selector(showAbout)))
         menu.addItem(.separator())
@@ -106,6 +115,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func testVoiceShortcut() { controller.testVoiceShortcut() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
+    @objc private func openUpdate() {
+        guard let update = controller.availableUpdate else { return }
+        NSWorkspace.shared.open(update.url)
+    }
+
+    @objc private func checkForUpdates() {
+        controller.onUpdateStatus = { [weak self] status in
+            self?.controller.onUpdateStatus = nil
+            let alert = NSAlert()
+            switch status {
+            case .upToDate:
+                alert.messageText = "Hey Codex is up to date"
+                alert.informativeText = "You are running \(self?.controller.appVersion ?? "")."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            case .available(let version, let url):
+                alert.messageText = "\(version) is available"
+                alert.informativeText = "You are running \(self?.controller.appVersion ?? "")."
+                alert.addButton(withTitle: "View Release")
+                alert.addButton(withTitle: "Later")
+                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(url) }
+            case .failed(let reason):
+                alert.messageText = "Could not check for updates"
+                alert.informativeText = reason
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+        controller.checkForUpdates(userInitiated: true)
+    }
+
     @objc private func reportIssue() {
         NSWorkspace.shared.open(URL(string: "https://github.com/cyburke/hey-codex/issues")!)
     }
@@ -121,9 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for one phrase and sends the same keyboard shortcut you configured \
             in ChatGPT.
 
-            Hey Codex never checks for or installs updates on its own. New \
-            versions are published on GitHub; if you installed with Homebrew, \
-            run: brew upgrade hey-codex
+            The only network request it makes is a daily check with GitHub for \
+            a newer release, which you can turn off in Settings. It never \
+            installs anything on its own.
 
             GPL-3.0. A fork of littlemelon77/hey-claude.
             """

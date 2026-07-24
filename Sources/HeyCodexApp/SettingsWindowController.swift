@@ -9,6 +9,8 @@ final class SettingsWindowController: NSWindowController {
     private let option = NSButton(checkboxWithTitle: "Option", target: nil, action: nil)
     private let command = NSButton(checkboxWithTitle: "Command", target: nil, action: nil)
     private let sensitivity = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let autoUpdates = NSButton(checkboxWithTitle: "Check for updates automatically",
+                                       target: nil, action: nil)
     private let notice = NSTextField(labelWithString: "")
     private let phraseValue = NSTextField(labelWithString: "")
     /// Set by AppDelegate so Settings opens the same enrollment window the menu
@@ -96,6 +98,15 @@ final class SettingsWindowController: NSWindowController {
 
         root.addArrangedSubview(rule())
 
+        // Updates ----------------------------------------------------------
+        root.addArrangedSubview(sectionHeader("Updates"))
+        autoUpdates.target = self
+        autoUpdates.action = #selector(saveAutoUpdates)
+        root.addArrangedSubview(autoUpdates)
+        root.addArrangedSubview(hint("Asks GitHub once a day whether a newer release exists. This is the only network request Hey Codex makes. Turn it off and it makes none."))
+
+        root.addArrangedSubview(rule())
+
         // Privacy ----------------------------------------------------------
         root.addArrangedSubview(sectionHeader("Privacy"))
         root.addArrangedSubview(body("Listening and wake-word processing happen entirely on this Mac. No audio is recorded, stored, or sent anywhere."))
@@ -114,10 +125,21 @@ final class SettingsWindowController: NSWindowController {
         command.state = shortcut.command ? .on : .off
         sensitivity.selectItem(at: sensitivityIndex(for: controller.settings.wakeKeywordsThreshold))
         phraseValue.stringValue = "“\(controller.settings.wakePhrase)”"
+        autoUpdates.state = controller.settings.automaticUpdateChecks ? .on : .off
         notice.stringValue = ""
     }
 
     @objc private func changeWakePhrase() { onChangeWakePhrase?() }
+
+    @objc private func saveAutoUpdates() {
+        do {
+            try controller.setAutomaticUpdateChecks(autoUpdates.state == .on)
+            notice.textColor = .systemGreen
+            notice.stringValue = autoUpdates.state == .on
+                ? "Hey Codex will check GitHub for new releases once a day."
+                : "Update checks are off. Hey Codex will make no network requests."
+        } catch { show(error.localizedDescription) }
+    }
 
     private func sensitivityIndex(for threshold: Float) -> Int {
         if threshold <= 0.10 { return 2 }
