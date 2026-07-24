@@ -5,7 +5,7 @@ import HeyCodexKit
 /// the listener while AVAudioEngine owns the microphone, then hands the tuned
 /// keyword lines back to AppController before listening resumes.
 @MainActor
-final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDelegate {
+final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDelegate, NSTextFieldDelegate {
     private let controller: AppController
     private let finished: () -> Void
     private let phraseField: NSTextField
@@ -71,6 +71,10 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         root.addArrangedSubview(progress)
         startButton.target = self
         startButton.action = #selector(start)
+        // Default button: macOS tints it with the accent colour and binds Return.
+        // This is the window's only real action, so it should always read as such.
+        startButton.keyEquivalent = "\r"
+        phraseField.delegate = self
         let buttons = NSStackView(views: [startButton])
         buttons.orientation = .horizontal
         buttons.spacing = 10
@@ -80,6 +84,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             buttons.addArrangedSubview(reset)
         }
         root.addArrangedSubview(buttons)
+        refreshPendingState()
     }
 
     /// Suggestions only fill the field — every phrase, preset or not, still has
@@ -88,6 +93,25 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     @objc private func choosePreset(_ sender: NSPopUpButton) {
         guard let title = sender.titleOfSelectedItem, title != "Custom…" else { return }
         phraseField.stringValue = title
+        refreshPendingState()
+    }
+
+    func controlTextDidChange(_ obj: Notification) { refreshPendingState() }
+
+    /// Picking a suggestion changes nothing on its own — the phrase only becomes
+    /// real after it is recorded. Say so the moment the field diverges from the
+    /// phrase that is actually active, so nobody closes the window believing
+    /// they switched.
+    private func refreshPendingState() {
+        let typed = phraseField.stringValue.trimmingCharacters(in: .whitespaces)
+        let active = controller.settings.wakePhrase
+        let pending = !typed.isEmpty
+            && typed.compare(active, options: .caseInsensitive) != .orderedSame
+        startButton.title = pending ? "Record “\(typed)” three times" : "Start three recordings"
+        progress.textColor = pending ? .controlAccentColor : .labelColor
+        progress.stringValue = pending
+            ? "“\(typed)” is not active yet — record it to switch."
+            : "Ready to record"
     }
 
     @objc private func start() {
@@ -115,7 +139,12 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             return
         }
         let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
-        progress.stringValue = "Recording \(samples.count + 1) of 3 — say “\(phraseField.stringValue)”"
+        // Prompt only once the engine is running. Announcing "say it now" before
+        // AVAudioEngine has produced a buffer invites the user to speak into a
+        // microphone that is not listening yet, which reads as a failed capture
+        // and makes them repeat themselves.
+        progress.textColor = .secondaryLabelColor
+        progress.stringValue = "Getting the microphone ready…"
         let kind: WakeEnrollment.Sample.Kind = samples.count < 2 ? .isolated : .natural
         let recorder = EnrollmentRecorder(endpointSilenceMs: controller.settings.endpointSilenceMs)
         self.recorder = recorder
@@ -127,7 +156,16 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 onClip: { [weak self] clip in
                     Task { @MainActor in self?.accept(clip, kind: kind, models: kwsModel) }
                 })
+            let index = samples.count + 1
+            let phrase = phraseField.stringValue
+            // Short settle for the first buffers to arrive before prompting.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self, self.recorder === recorder else { return }
+                self.progress.textColor = .labelColor
+                self.progress.stringValue = "Recording \(index) of 3 — say “\(phrase)” now"
+            }
         } catch {
+            progress.textColor = .systemRed
             progress.stringValue = "Could not access the microphone: \(error.localizedDescription)"
             startButton.isEnabled = true
         }
@@ -146,7 +184,9 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                     self.samples.append(.init(audio: clip, kind: kind))
                     self.progress.stringValue = "Captured \(self.samples.count) of 3"
                 } else {
-                    self.progress.stringValue = "That recording was too short or unclear. Please try again."
+                    self.progress.textColor = .systemOrange
+                    self.progress.stringValue =
+                        "Didn't catch that one — say the whole phrase at a normal pace, then pause."
                 }
             }
             try? await Task.sleep(for: .milliseconds(500))
@@ -193,8 +233,17 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                     try self.controller.completeEnrollment(phrase: phrase,
                                                           keywordLines: result.keywordLines,
                                                           threshold: result.threshold)
-                    self.confirm(title: "“\(phrase)” is now your wake phrase",
-                                 body: "Hey Codex is listening for it now. Change it any time from the menu bar.")
+                    // The sweep takes the highest threshold that fires all three
+                    // samples, so landing on the loosest rung means this phrase
+                    // was hard to match — which is also when false wakes climb.
+                    let barelyMatched = result.threshold <= 0.10
+                    var body = "Hey Codex is listening for it now. Change it any time from the menu bar."
+                    if barelyMatched {
+                        body += "\n\nThis phrase needed maximum sensitivity to detect reliably, "
+                            + "so it may occasionally wake by accident. A longer or more distinctive "
+                            + "phrase usually matches more cleanly."
+                    }
+                    self.confirm(title: "“\(phrase)” is now your wake phrase", body: body)
                     self.complete()
                 } catch {
                     self.progress.stringValue = error.localizedDescription
