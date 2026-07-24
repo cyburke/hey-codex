@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Seeded from the current value so an install that is already verified does
     /// not re-announce itself on every launch.
     private lazy var previousVerified: Bool = controller.isVoiceStateVerified
+    private var isRefreshingMenu = false
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
@@ -77,6 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) { refreshMenu() }
 
     private func refreshMenu() {
+        // A menu rebuild can be triggered from inside a rebuild: a banner sets
+        // state, which refreshes the menu. One level is all that is ever needed,
+        // and re-entering is how a stack overflow starts.
+        guard !isRefreshingMenu else { return }
+        isRefreshingMenu = true
+        defer { isRefreshingMenu = false }
+
         noticeWakeIfStarting()
         noticeFirstVerifiedLaunch()
         menu.removeAllItems()
@@ -294,16 +302,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// when the only honest thing to say was "click to test".
     private func noticeFirstVerifiedLaunch() {
         let verified = controller.isVoiceStateVerified
-        defer { previousVerified = verified }
-        guard verified, !previousVerified else { return }
-        announceReady()
+        let shouldAnnounce = verified && !previousVerified
+        // Record the transition BEFORE announcing. announceReady refreshes the
+        // menu, which lands back here; a deferred assignment runs on the way out
+        // and so never breaks that loop.
+        previousVerified = verified
+        if shouldAnnounce { announceReady() }
     }
 
     /// Turn "the shortcut is being sent" into something the user can see.
     private func noticeWakeIfStarting() {
         let status = controller.status
-        defer { previousStatus = status }
-        guard status == .activating, previousStatus != .activating else { return }
+        let isNewWake = status == .activating && previousStatus != .activating
+        previousStatus = status
+        guard isNewWake else { return }
         readyBannerUntil = nil
         wakeBannerUntil = Date().addingTimeInterval(4)
         wakeBannerTimer?.invalidate()
