@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wakeBannerUntil: Date?
     private var wakeBannerTimer: Timer?
     private var previousStatus: AppController.Status?
+    /// Seeded from the current value so an install that is already verified does
+    /// not re-announce itself on every launch.
+    private lazy var previousVerified: Bool = controller.isVoiceStateVerified
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
@@ -75,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshMenu() {
         noticeWakeIfStarting()
+        noticeFirstVerifiedLaunch()
         menu.removeAllItems()
         let state = controller.setupState
 
@@ -223,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 tint = .systemBlue
             } else if let until = readyBannerUntil, Date() < until {
                 label = controller.isVoiceStateVerified
-                    ? "<Say \u{201C}\(controller.settings.wakePhrase)\u{201D} to start>"
+                    ? "<All set. Say \u{201C}\(controller.settings.wakePhrase)\u{201D} anytime>"
                     : "<Ready: click to test>"
                 tint = .systemGreen
             } else {
@@ -283,6 +287,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         refreshMenu()
+    }
+
+    /// The moment a launch is first observed to actually work, setup is over in
+    /// the way the user cares about. Say so: the permission banner fired earlier,
+    /// when the only honest thing to say was "click to test".
+    private func noticeFirstVerifiedLaunch() {
+        let verified = controller.isVoiceStateVerified
+        defer { previousVerified = verified }
+        guard verified, !previousVerified else { return }
+        announceReady()
     }
 
     /// Turn "the shortcut is being sent" into something the user can see.
