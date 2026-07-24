@@ -29,7 +29,7 @@ brew install --cask --no-quarantine cyburke/tap/hey-codex
 
 **Or download it**
 
-1. Grab `HeyCodex.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
+1. Grab the `.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
 2. Unzip, drag **HeyCodex.app** into Applications.
 3. Open it. macOS blocks it the first time.
 4. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway**.
