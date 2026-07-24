@@ -49,13 +49,23 @@ Both routes exist because Hey Codex is not notarized by Apple. [Here is why that
 
 ## Set it up
 
-1. In **ChatGPT → Settings → Voice**, check the **Voice chat hotkey**. Hey Codex expects `⌃⌥V`. Any chord works as long as both apps agree.
-2. Launch Hey Codex. A small wake icon appears in your menu bar.
-3. Allow **Microphone** when asked. That is how it hears you.
-4. Click **Enable ChatGPT Voice**, then allow **Accessibility**. That is how it presses the hotkey.
-5. Say **"Hey Codex."**
+Setup happens in the menu bar. There are no windows and nothing to hunt for: the menu bar item tells you what is left to do, and stops asking once it is done.
 
-Done. To end a Voice session, close it in ChatGPT however you normally would. Hey Codex notices and starts listening again by itself. There is no second phrase to memorize.
+First, in **ChatGPT → Settings → Voice**, check the **Voice chat hotkey**. Hey Codex expects `⌃⌥V`. Any chord works as long as both apps agree.
+
+Then launch Hey Codex and follow the menu bar:
+
+| It says | You do |
+| --- | --- |
+| **Set up Hey Codex: step 1 of 2** | Click it, allow **Microphone**. This is how it hears you. |
+| **Set up Hey Codex: step 2 of 2** | Click it, allow **Accessibility**. This is how it presses the hotkey. |
+| **Finishing setup...** | Nothing. It restarts itself so macOS hands it the new permission. |
+| **Ready: click to test** | Click **Try It: Test ChatGPT Voice**. Confirms your hotkey matches. |
+| **All set. Say "Hey Codex" anytime** | Say it. |
+
+Orange means something is still waiting on you. Green means it just finished. A plain icon means it is listening and out of your way.
+
+To end a Voice session, close it in ChatGPT however you normally would. Hey Codex notices and starts listening again by itself. There is no second phrase to memorize.
 
 ## What makes it not annoying
 

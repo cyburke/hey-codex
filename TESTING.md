@@ -11,15 +11,27 @@ Do not ask a tester to run a Voice check until the automated gates below pass.
 
 ## One local manual session
 
-1. **Test action:** Voice opens and remains active.
-2. **Wake action:** after ending and re-arming, one “Hey Codex” opens Voice and the menu icon locks.
-3. **Safety regression:** saying “Hey Codex” while that Voice chat is active does nothing; it must not toggle Voice off.
-4. **Foreground activation:** with ChatGPT itself frontmost, one “Hey Codex” opens Voice.
-5. **User-opened session:** open Voice yourself with the hotkey, then say “Hey Codex”; Voice must stay open.
-6. **Self re-arm:** close Voice in ChatGPT’s own panel (or with the hotkey); within about a second Hey Codex returns to armed/listening with nothing spoken.
-7. **Explicit end:** choose **End Voice Session** from Hey Codex’s menu; Voice ends and Hey Codex returns to armed/listening.
-8. **Custom wake phrase:** choose **Use My Own Wake Phrase…**, enroll a multi-word phrase, and confirm the new phrase wakes Voice and the old one no longer does. Then choose **Back to “Hey Codex”** and confirm the default works again.
-9. **Enrollment gives the microphone back:** after enrolling (and after cancelling mid-enrollment by closing the window), the menu must return to listening without relaunching the app.
-10. **No hidden off state:** while Hey Codex is running, the menu must not offer a Stop or Pause listener action. Quitting the app is the only way to stop the listener.
+Reset first, or none of this proves anything:
+
+```bash
+tccutil reset Microphone com.heycodex.app
+tccutil reset Accessibility com.heycodex.app
+mv ~/Library/Application\ Support/HeyCodex ~/Library/Application\ Support/HeyCodex.bak
+```
+
+1. **Discovery:** after launch the menu bar reads an orange `<Set up Hey Codex: step 1 of 2>`. Text, not a bare symbol.
+2. **Microphone:** clicking it prompts, and afterwards the label advances to `step 2 of 2`. A label that does not change reads as failure.
+3. **Accessibility:** clicking it prompts, then opens System Settings. Toggling Hey Codex on makes the app restart itself within a few seconds with no further clicks.
+4. **Test:** the label sits on `<Ready: click to test>` indefinitely and does not expire. Choosing **Try It: Test ChatGPT Voice** opens Voice.
+5. **Completion:** after that first verified launch the label turns green, names the phrase, and clears after about twenty seconds.
+6. **Wake:** one spoken phrase opens Voice, on the first attempt.
+7. **Foreground:** the same with ChatGPT itself frontmost.
+8. **Repeat wake:** saying it again while Voice is open does nothing and must not hang up.
+9. **Self re-arm:** closing Voice in ChatGPT returns the helper to listening within about a second, with nothing spoken.
+10. **User-opened session:** open Voice with the hotkey, then say the phrase. Voice must stay open.
+11. **Custom phrase:** enrol a multi-word phrase, confirm it wakes and the old one no longer does, then **Back to "Hey Codex"** and confirm the default works again.
+12. **Enrollment returns the microphone:** after enrolling, and after cancelling mid-enrolment by closing the window, listening resumes without relaunching.
+13. **No hidden off state:** the menu never offers a Stop or Pause listener action. Quitting is the only way to stop it.
+14. **No crash reports:** `ls ~/Library/Logs/DiagnosticReports/HeyCodex*` is empty afterwards.
 
 Record the exact ChatGPT desktop version and the pass/fail result for each gate before any public release decision.
