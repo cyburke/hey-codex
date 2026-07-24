@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="Resources/hero.svg" alt="Hey Codex: ChatGPT Voice, hands free, from anywhere on your Mac" width="820">
+
 # Hey Codex
 
 **Say "Hey Codex." ChatGPT Voice opens. Keep your hands where they are.**
