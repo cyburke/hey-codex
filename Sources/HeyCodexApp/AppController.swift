@@ -69,7 +69,54 @@ final class AppController {
         @unknown default: return true
         }
     }
-    var needsFirstRunSetup: Bool { !isMicrophoneAuthorized || !settings.voiceShortcutSetupCompleted }
+    /// Where the user is in setup, as one value the menu renders directly.
+    var setupState: SetupState {
+        SetupStateResolver.state(microphone: microphoneAuthorization,
+                                 accessibilityTrusted: AXIsProcessTrusted(),
+                                 canPostEvents: CGPreflightPostEventAccess())
+    }
+
+    var needsFirstRunSetup: Bool { !setupState.isComplete }
+
+    private var microphoneAuthorization: MicrophoneAuthorization {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: return .authorized
+        case .notDetermined: return .notDetermined
+        default: return .denied
+        }
+    }
+
+    /// Hey Codex presses a hotkey in another app, so that app has to exist.
+    /// Without this check a user finishes setup, says the phrase, and nothing
+    /// happens forever with nothing to explain why.
+    var isChatGPTInstalled: Bool {
+        NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: VoicePanelObserver.chatGPTBundleIdentifier) != nil
+    }
+
+    /// Relaunch so a freshly granted Accessibility permission takes effect. The
+    /// replacement is started before this instance exits so the menu bar icon
+    /// does not disappear on the user mid-setup.
+    func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL,
+                                           configuration: configuration) { _, _ in
+            Task { @MainActor in NSApp.terminate(nil) }
+        }
+    }
+
+    /// Ask macOS for permission to post the shortcut. Returns false when the
+    /// user has to finish the job in System Settings.
+    @discardableResult
+    func requestAccessibility() -> Bool {
+        if CGPreflightPostEventAccess() {
+            markVoiceShortcutSetupCompleted()
+            return true
+        }
+        CGRequestPostEventAccess()
+        return CGPreflightPostEventAccess()
+    }
 
     func requestMicrophoneAccess(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {

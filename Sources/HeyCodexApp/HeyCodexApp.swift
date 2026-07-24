@@ -1,4 +1,5 @@
 import AppKit
+import HeyCodexKit
 
 /// Hey Codex is intentionally an accessory/menu-bar app: it has no floating
 /// notch or overlay and never takes focus from the current app.
@@ -22,8 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = AppController()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private var settingsWindow: SettingsWindowController?
-    private var firstRunSetupWindow: FirstRunSetupWindowController?
     private var enrollmentWindow: WakePhraseEnrollmentWindowController?
+    private var setupPoll: Timer?
     private let menu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -38,55 +39,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         beginLaunchFlow()
         refreshMenu()
         controller.checkForUpdates(userInitiated: false)
+        startSetupPolling()
+        // Show the user where Hey Codex lives, once, on the very first launch
+        // with setup outstanding. An accessory app that appears silently among
+        // a dozen other menu bar icons is an app nobody finds.
+        if controller.needsFirstRunSetup {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.reopenMenu()
+            }
+        }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) { refreshMenu() }
 
     private func refreshMenu() {
         menu.removeAllItems()
-        let state = NSMenuItem(title: controller.status.menuText, action: nil, keyEquivalent: "")
-        state.isEnabled = false
-        menu.addItem(state)
-        if let update = controller.availableUpdate {
-            let item = item("Update available: \(update.version)", #selector(openUpdate))
-            item.attributedTitle = NSAttributedString(
-                string: "Update available: \(update.version)",
-                attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)])
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
+        let state = controller.setupState
 
-        // Voice normally ends in ChatGPT's own panel and Hey Codex re-arms
-        // itself, so these appear only while a session is held.
-        if !controller.isArmed {
-            menu.addItem(item("End Voice Session", #selector(endVoiceSession)))
-            // Only meaningful when Hey Codex cannot see ChatGPT's Voice panel.
-            // With detection working, End Voice Session already handles an
-            // already-closed session; offering both would be a coin flip.
-            if !controller.isVoiceStateVerified {
-                menu.addItem(item("Voice Already Closed - Reset", #selector(rearmVoice)))
-            }
-            menu.addItem(.separator())
-        }
-        if controller.needsFirstRunSetup {
-            // One door while setup is unfinished. Offering "Complete Setup",
-            // "Enable ChatGPT Voice Shortcut" and "Test ChatGPT Voice Shortcut"
-            // side by side left people guessing which one was next.
-            let finish = item("Finish Setup…", #selector(openFirstRunSetup))
-            finish.attributedTitle = NSAttributedString(
-                string: "Finish Setup…",
-                attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)])
-            menu.addItem(finish)
+        if state.isComplete {
+            buildReadyMenu()
         } else {
-            menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
+            buildSetupMenu(state)
         }
-        let phraseTitle = controller.hasEnrolledWakePhrase
-            ? "Wake Phrase: “\(controller.settings.wakePhrase)”…"
-            : "Use My Own Wake Phrase…"
-        menu.addItem(item(phraseTitle, #selector(enrollWakePhrase)))
-        menu.addItem(item("Settings…", #selector(openSettings)))
+
         menu.addItem(.separator())
-        menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
         menu.addItem(item("Report an Issue…", #selector(reportIssue)))
         menu.addItem(item("About Hey Codex", #selector(showAbout)))
         menu.addItem(.separator())
@@ -94,18 +70,129 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         privacy.isEnabled = false
         menu.addItem(privacy)
         menu.addItem(item("Quit Hey Codex", #selector(quit)))
+        refreshStatusIcon(state)
+    }
 
+    /// Setup lives in the menu, not in a window. A menu cannot be lost behind
+    /// another app, it teaches the user where Hey Codex actually lives, and it
+    /// is still correct when they come back from System Settings.
+    private func buildSetupMenu(_ state: SetupState) {
+        switch state {
+        case .needsMicrophone:
+            addHeading("Hey Codex needs two permissions")
+            menu.addItem(action("Step 1 of 2: Allow Microphone…", #selector(grantMicrophone)))
+            addNote("Listening happens on this Mac. Nothing is recorded.")
+        case .microphoneBlocked:
+            addHeading("Microphone access is switched off")
+            menu.addItem(action("Open Microphone Settings…", #selector(openMicrophoneSettings)))
+            addNote("Turn on Hey Codex, then come back to this menu.")
+        case .needsAccessibility:
+            addHeading("One more permission")
+            menu.addItem(action("Step 2 of 2: Allow Accessibility…", #selector(grantAccessibility)))
+            addNote("This is what lets Hey Codex press the ChatGPT hotkey.")
+        case .accessibilityPendingRelaunch:
+            addHeading("Almost there")
+            menu.addItem(action("Relaunch to Finish Setup", #selector(relaunchApp)))
+            addNote("macOS needs Hey Codex to restart before it can use the permission.")
+        case .ready:
+            break
+        }
+        if !controller.isChatGPTInstalled {
+            menu.addItem(.separator())
+            addNote("The ChatGPT desktop app was not found.")
+            menu.addItem(item("Get ChatGPT for Mac…", #selector(openChatGPTDownload)))
+        }
+    }
+
+    private func buildReadyMenu() {
+        let state = NSMenuItem(title: controller.status.menuText, action: nil, keyEquivalent: "")
+        state.isEnabled = false
+        menu.addItem(state)
+        if let update = controller.availableUpdate {
+            menu.addItem(action("Update available: \(update.version)", #selector(openUpdate)))
+        }
+        menu.addItem(.separator())
+
+        if !controller.isArmed {
+            menu.addItem(item("End Voice Session", #selector(endVoiceSession)))
+            if !controller.isVoiceStateVerified {
+                menu.addItem(item("Voice Already Closed — Reset", #selector(rearmVoice)))
+            }
+            menu.addItem(.separator())
+        }
+        if !controller.isChatGPTInstalled {
+            addNote("The ChatGPT desktop app was not found.")
+            menu.addItem(item("Get ChatGPT for Mac…", #selector(openChatGPTDownload)))
+            menu.addItem(.separator())
+        }
+        menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
+        let phraseTitle = controller.hasEnrolledWakePhrase
+            ? "Wake Phrase: “\(controller.settings.wakePhrase)”…"
+            : "Use My Own Wake Phrase…"
+        menu.addItem(item(phraseTitle, #selector(enrollWakePhrase)))
+        menu.addItem(item("Settings…", #selector(openSettings)))
+        menu.addItem(item("Check for Updates…", #selector(checkForUpdates)))
+    }
+
+    private func addHeading(_ text: String) {
+        let heading = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+        heading.isEnabled = false
+        menu.addItem(heading)
+    }
+
+    private func addNote(_ text: String) {
+        let note = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        note.attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        menu.addItem(note)
+    }
+
+    /// The one thing to do next, weighted so it reads as the next step.
+    private func action(_ title: String, _ selector: Selector) -> NSMenuItem {
+        let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+        entry.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+        ])
+        return entry
+    }
+
+    private func refreshStatusIcon(_ state: SetupState) {
         let name: String
-        if !controller.isListening {
+        if !state.isComplete {
+            // Unfinished setup should be visible without opening the menu.
+            name = "exclamationmark.circle"
+        } else if !controller.isListening {
             name = "pause.circle"
         } else if controller.isArmed {
             name = "dot.radiowaves.left.and.right"
         } else {
             name = "lock.fill"
         }
-        if let image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex listener") {
+        if let image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex") {
             image.isTemplate = true
             statusItem.button?.image = image
+        }
+    }
+
+    /// While setup is outstanding the state can change in System Settings, where
+    /// the app gets no notification. Poll so the menu is already correct the
+    /// moment the user looks at it again.
+    private func startSetupPolling() {
+        setupPoll?.invalidate()
+        setupPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard !self.controller.setupState.isComplete else {
+                    self.setupPoll?.invalidate()
+                    self.setupPoll = nil
+                    self.refreshMenu()
+                    return
+                }
+                self.refreshMenu()
+            }
         }
     }
 
@@ -113,10 +200,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSMenuItem(title: title, action: action, keyEquivalent: "")
     }
 
+    @objc private func grantMicrophone() {
+        controller.requestMicrophoneAccess { [weak self] granted in
+            if granted { self?.controller.startListening() }
+            // The system dialog took focus. Come back and show what is next
+            // rather than leaving the user to guess.
+            self?.reopenMenu()
+        }
+    }
+
+    @objc private func openMicrophoneSettings() { controller.openMicrophoneSettings() }
+
+    @objc private func grantAccessibility() {
+        if controller.requestAccessibility() {
+            refreshMenu()
+            reopenMenu()
+            return
+        }
+        // macOS will not grant this inline. Put the user in the right pane and
+        // let the poll notice when they flip the switch.
+        controller.openVoiceShortcutSettings()
+    }
+
+    @objc private func relaunchApp() { controller.relaunch() }
+
+    @objc private func openChatGPTDownload() {
+        NSWorkspace.shared.open(URL(string: "https://openai.com/chatgpt/download/")!)
+    }
+
+    /// Reopen the menu so the next step is visible without the user hunting for
+    /// the icon again.
+    private func reopenMenu() {
+        refreshMenu()
+        NSApp.activate(ignoringOtherApps: true)
+        statusItem.button?.performClick(nil)
+    }
+
     @objc private func rearmVoice() { controller.rearmVoice() }
     @objc private func endVoiceSession() { controller.endVoiceSession() }
-    @objc private func openFirstRunSetup() { showFirstRunSetup() }
-    @objc private func enableVoiceShortcut() { controller.requestVoiceShortcutPermission() }
     @objc private func testVoiceShortcut() { controller.testVoiceShortcut() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
@@ -200,31 +321,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func beginLaunchFlow() {
-        // Do not request microphone permission while the app is launching.
-        // The first-run window owns that explicit, visible user action.
-        if controller.isMicrophoneAuthorized {
-            controller.startListening()
-            if controller.needsFirstRunSetup { showFirstRunSetup() }
-        } else {
-            showFirstRunSetup()
-        }
-    }
-
-    private func showFirstRunSetup() {
-        let window = firstRunSetupWindow ?? FirstRunSetupWindowController(controller: controller) { [weak self] in
-            self?.firstRunSetupWindow = nil
-            self?.refreshMenu()
-        }
-        firstRunSetupWindow = window
-        window.showWindowOnTop()
+        // Never prompt for the microphone at launch. Permission is asked for
+        // only when the user picks the step out of the menu, so the prompt
+        // always has context.
+        if controller.isMicrophoneAuthorized { controller.startListening() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if controller.needsFirstRunSetup {
-            showFirstRunSetup()
-        } else {
-            openSettings()
-        }
+        controller.needsFirstRunSetup ? reopenMenu() : openSettings()
         return true
     }
 }

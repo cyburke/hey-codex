@@ -45,7 +45,6 @@ let package = Package(
             path: "Sources/HeyCodexApp",
             sources: [
                 "AppController.swift",
-                "FirstRunSetupWindowController.swift",
                 "HeyCodexApp.swift",
                 "SettingsWindowController.swift",
                 "WakePhraseEnrollmentWindowController.swift",
@@ -68,6 +67,7 @@ let package = Package(
                 "VoiceDetectionTrustTests.swift",
                 "VoiceActivityDetectorTests.swift",
                 "VoiceSessionTests.swift",
+                "SetupStateTests.swift",
                 "UpdateCheckTests.swift",
                 "VoiceShortcutTests.swift",
                 "WakeEnrollmentTests.swift",
