@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- On-device wake-word + transcription listens on the mic. -->
+	<!-- On-device wake-word detection listens on the mic. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Matches Xcode's local Development signing profile. This is for the
-	     free on-device alpha only; release distribution uses Developer ID. -->
-	<key>com.apple.security.get-task-allow</key>
-	<true/>
+	<!-- Deliberately NOT set: com.apple.security.get-task-allow.
+	     It permits any process to attach a debugger, which is not something
+	     an always-listening microphone app should hand out in a public build.
+	     Add it back locally if you need to attach a debugger. -->
 </dict>
 </plist>

@@ -26,17 +26,17 @@ Nothing is recorded. Nothing is uploaded. No account, no signup, no config file.
 **Homebrew**
 
 ```bash
-brew install --cask --no-quarantine cyburke/tap/hey-codex
+brew install --cask cyburke/tap/hey-codex
+open /Applications/HeyCodex.app
 ```
 
 **Or download it**
 
 1. Grab the `.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
 2. Unzip, drag **HeyCodex.app** into Applications.
-3. Open it. macOS blocks it the first time.
-4. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway**.
+3. Open it.
 
-Step 4 happens once. [Here is why](#why-macos-warns-you).
+**Either way, macOS blocks it the first time.** Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the Hey Codex message. That happens once, and [here is why](#why-macos-warns-you).
 
 ## Set it up
 
@@ -96,7 +96,8 @@ If you hold an Apple Developer ID and want to contribute a notarized build, plea
 ## Known limits
 
 - Updates are not automatic. Hey Codex tells you when a release exists, you install it.
-- Upgrading can re-prompt for Microphone and Accessibility, because an unsigned build looks like a new app to macOS.
+- The app is signed but not notarized, so macOS asks you to approve it on first launch and again after each update.
+- Upgrading can re-prompt for Microphone and Accessibility, because a rebuilt app can look like a new app to macOS.
 - It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
 
 ## Build it yourself
