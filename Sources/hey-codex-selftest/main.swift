@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 import HeyCodexKit
 
@@ -139,6 +140,95 @@ func probeBundleModels(_ appPath: String) -> Bool {
             .reduce(0, +)) ?? 0
         print("  [diag] bundled Models total: \(size / 1_048_576) MB")
     }
+}
+
+// MARK: - Audio device footprint
+
+/// Proves AudioCapture touches the microphone and nothing else.
+///
+/// AVAudioEngine, which this used to be built on, makes CoreAudio fabricate a
+/// private aggregate device spanning the default input AND output, so listening
+/// for a wake word quietly pulled the user's speakers into a synthetic device.
+/// This check fails if any new device appears while capturing, or if a device
+/// with output channels starts running.
+/// Run: `swift run hey-codex-selftest audio-footprint`
+func probeAudioFootprint() -> Bool {
+    func deviceIDs() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids)
+        return ids
+    }
+    func deviceName(_ id: AudioObjectID) -> String {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var value: CFString = "" as CFString
+        var size = UInt32(MemoryLayout<CFString>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return "?" }
+        return value as String
+    }
+    func channelCount(_ id: AudioObjectID, _ scope: AudioObjectPropertyScope) -> Int {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
+                                                 mScope: scope,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr, size > 0 else { return 0 }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: 16)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, raw) == noErr else { return 0 }
+        let list = raw.assumingMemoryBound(to: AudioBufferList.self)
+        return Int(UnsafeMutableAudioBufferListPointer(list).reduce(0) { $0 + $1.mNumberChannels })
+    }
+    func isRunning(_ id: AudioObjectID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return false }
+        return value != 0
+    }
+
+    return run("audio.footprintIsInputOnly") { c in
+        let before = Set(deviceIDs())
+        print("  [diag] devices before: \(before.count)")
+
+        let frames = Counter()
+        let capture = try AudioCapture { samples in
+            if !samples.isEmpty { frames.bump() }
+        }
+        try capture.start()
+        Thread.sleep(forTimeInterval: 2.0)
+
+        let after = deviceIDs()
+        let added = after.filter { !before.contains($0) }
+        let runningWithOutput = after.filter { channelCount($0, kAudioDevicePropertyScopeOutput) > 0 && isRunning($0) }
+
+        print("  [diag] devices during: \(after.count)")
+        print("  [diag] frames delivered: \(frames.value)")
+        for id in added { print("  [diag] NEW DEVICE: \(deviceName(id))") }
+        for id in runningWithOutput { print("  [diag] running output device: \(deviceName(id))") }
+
+        c.assert(frames.value > 0, "no audio frames arrived; capture is not actually live")
+        c.assert(added.isEmpty,
+                 "capture created \(added.count) device(s): \(added.map(deviceName).joined(separator: ", ")). " +
+                 "An aggregate spanning the output device is the AVAudioEngine regression.")
+        capture.stop()
+    }
+}
+
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func bump() { lock.lock(); count += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
 func checkWakePhraseDefaults() -> Bool {
@@ -638,6 +728,9 @@ func main() -> Int32 {
         let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
         let editor = EditorKind(rawValue: editorArg) ?? .cursor
         return probeEditorOpenLive(editor) ? 0 : 1
+    }
+    if requested == "audio-footprint" {
+        return probeAudioFootprint() ? 0 : 1
     }
     if requested == "bundle-models" {
         let app = CommandLine.arguments.dropFirst(2).first ?? "dist/HeyCodex.app"

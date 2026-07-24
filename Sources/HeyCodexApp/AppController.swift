@@ -98,6 +98,12 @@ final class AppController {
     /// replacement is started before this instance exits so the menu bar icon
     /// does not disappear on the user mid-setup.
     func relaunch(reason: String? = nil) {
+        // Release the microphone BEFORE the replacement launches. Starting the
+        // new instance first left two processes holding the same input device at
+        // once, and on hardware that does input and output through one device
+        // (USB monitors, docks, interfaces) that contention can wedge CoreAudio
+        // and take the machine's sound out with it.
+        stopPipeline()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
         if let reason { configuration.arguments = [reason] }

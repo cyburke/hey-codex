@@ -1,105 +1,144 @@
 @preconcurrency import AVFoundation
 import Foundation
 
-/// Live microphone capture → 16 kHz mono Float frames on a serial queue.
-/// `@unchecked Sendable`: all mutable state is confined to `queue`; the tap
-/// closure captures only `self` (never a main-actor global) — required to avoid
-/// the real-time-thread isolation crash.
+/// Live microphone capture, delivering 16 kHz mono Float frames on a serial queue.
+///
+/// Deliberately built on `AVCaptureSession` rather than `AVAudioEngine`.
+///
+/// `AVAudioEngine` on macOS runs one I/O unit spanning the default input *and*
+/// the default output device, and merely installing an input tap makes CoreAudio
+/// fabricate a private aggregate device covering both. Measured on a Mac whose
+/// monitor provides input and output through a single USB device:
+///
+///     AVAudioEngine:     devices 5 -> 6
+///                        NEW: CADefaultDeviceAggregate  in:2 out:2  IO-RUNNING
+///     AVCaptureSession:  devices 5 -> 5
+///                        CHANGED: the microphone only,  in:2 out:0  IO-RUNNING
+///
+/// An always-listening menu bar app must not drag the user's speakers into a
+/// synthetic aggregate device just to hear a wake word. Capture is input only.
+///
+/// `@unchecked Sendable`: mutable state lives on the capture queue, which is also
+/// the delivery queue.
 public final class AudioCapture: @unchecked Sendable {
-    public enum CaptureError: Swift.Error { case audioFormat }
+    public enum CaptureError: Swift.Error {
+        case noInputDevice
+        case sessionRejectedInput
+        case sessionRejectedOutput
+    }
 
-    private let engine = AVAudioEngine()
-    private let inputFormat: AVAudioFormat
-    private let targetFormat: AVAudioFormat
-    private let converter: AVAudioConverter
+    /// Sample rate the wake-word engine expects.
+    public static let sampleRate = 16000.0
+
+    private let session = AVCaptureSession()
+    private let output = AVCaptureAudioDataOutput()
     private let queue = DispatchQueue(label: "com.heycodex.audiocapture")
-    private let onFrame: ([Float]) -> Void
-    private var muted = false
+    private let delegate: SampleDelegate
 
     /// onFrame is invoked on a private serial queue with 16 kHz mono samples.
-    public init(onFrame: @escaping ([Float]) -> Void) throws {
-        self.onFrame = onFrame
-        self.inputFormat = engine.inputNode.outputFormat(forBus: 0)
-        guard let target = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                         sampleRate: 16000, channels: 1, interleaved: false),
-              let conv = AVAudioConverter(from: inputFormat, to: target) else {
-            throw CaptureError.audioFormat
+    /// `device` defaults to the system input; being able to name one explicitly
+    /// keeps a future device picker from having to touch anything else.
+    public init(device: AVCaptureDevice? = nil, onFrame: @escaping ([Float]) -> Void) throws {
+        guard let device = device ?? AVCaptureDevice.default(for: .audio) else {
+            throw CaptureError.noInputDevice
         }
-        self.targetFormat = target
-        self.converter = conv
+        self.delegate = SampleDelegate(onFrame: onFrame)
+
+        let input = try AVCaptureDeviceInput(device: device)
+        guard session.canAddInput(input) else { throw CaptureError.sessionRejectedInput }
+        session.addInput(input)
+
+        // macOS lets the capture output convert for us, so there is no manual
+        // resampling step and no AVAudioConverter to keep in step with whatever
+        // format the device happens to be in.
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Self.sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        output.setSampleBufferDelegate(delegate, queue: queue)
+        guard session.canAddOutput(output) else { throw CaptureError.sessionRejectedOutput }
+        session.addOutput(output)
     }
 
     public func start() throws {
-        installTap()
-        try engine.start()
+        guard !session.isRunning else { return }
+        delegate.setMuted(false)
+        session.startRunning()
     }
 
-    public func stop() { engine.stop(); engine.inputNode.removeTap(onBus: 0) }
-
-    /// Installs the input tap. Each delivered buffer is resampled on the realtime
-    /// thread, then handed to `onFrame` on the serial queue. The `muted` flag is a
-    /// belt-and-suspenders gate for any frame already in flight when mute lands;
-    /// the real release is `setMuted` tearing the engine down (see below).
-    private func installTap() {
-        engine.inputNode.installTap(onBus: 0, bufferSize: 1600, format: inputFormat) {
-            [self] buffer, _ in
-            let samples = resample(buffer)
-            guard !samples.isEmpty else { return }
-            queue.async {
-                guard !self.muted else { return }
-                self.onFrame(samples)
-            }
-        }
+    public func stop() {
+        guard session.isRunning else { return }
+        session.stopRunning()
     }
 
-    /// Mute **releases the microphone at the OS level**, it does not merely drop
-    /// frames: it stops the engine and removes the tap, so macOS tears down the
-    /// input stream — the orange mic indicator turns off and other apps can take
-    /// the device. Unmute reinstalls the tap and restarts the engine.
+    /// Mute **releases the microphone at the OS level** rather than dropping
+    /// frames: stopping the session tears the input stream down, so the orange
+    /// recording indicator goes out and other apps can take the device.
     ///
-    /// Returns the resulting *live* state (`true` = mic is capturing). On unmute a
-    /// failed `engine.start()` returns `false` so the caller stays truthful — it
-    /// must not claim a live mic the OS never re-granted. Mirrors the wake-engine
-    /// rebuild rule: an error must never silently leave the app deaf.
-    ///
-    /// Engine control runs on the caller (the main actor, same as `start()`/`stop()`)
-    /// to keep a single serialization domain; only the `muted` flag flips on the
-    /// audio queue, synchronized so an in-flight frame can't slip through.
+    /// Returns the resulting live state (`true` = capturing). A session that
+    /// fails to restart reports `false`, so the caller never claims a live
+    /// microphone the OS did not grant.
     @discardableResult
     public func setMuted(_ value: Bool) -> Bool {
         if value {
-            if engine.isRunning {
-                engine.stop()
-                engine.inputNode.removeTap(onBus: 0)
-            }
-            queue.sync { muted = true }
+            delegate.setMuted(true)
+            stop()
             return false
         }
-        if !engine.isRunning {
-            do {
-                installTap()
-                try engine.start()
-            } catch {
-                Log.audio.error("unmute failed; mic did not restart: \(error.localizedDescription, privacy: .public)")
-                return false
-            }
-        }
-        queue.sync { muted = false }
-        return true
+        delegate.setMuted(false)
+        session.startRunning()
+        return session.isRunning
     }
 
-    private func resample(_ buffer: AVAudioPCMBuffer) -> [Float] {
-        let ratio = 16000.0 / inputFormat.sampleRate
-        let cap = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: cap) else { return [] }
-        final class Once: @unchecked Sendable { var fed = false }
-        let once = Once()
-        var err: NSError?
-        converter.convert(to: out, error: &err) { _, status in
-            if once.fed { status.pointee = .noDataNow; return nil }
-            once.fed = true; status.pointee = .haveData; return buffer
+    /// Receives capture buffers and turns them into plain sample arrays.
+    private final class SampleDelegate: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+        private let onFrame: ([Float]) -> Void
+        private var muted = false
+
+        init(onFrame: @escaping ([Float]) -> Void) { self.onFrame = onFrame }
+
+        /// Set from the main actor but read on the capture queue. A stale read
+        /// only costs one extra frame, which the caller already tolerates.
+        func setMuted(_ value: Bool) { muted = value }
+
+        func captureOutput(_ output: AVCaptureOutput,
+                           didOutput sampleBuffer: CMSampleBuffer,
+                           from connection: AVCaptureConnection) {
+            guard !muted else { return }
+            let samples = Self.floatSamples(from: sampleBuffer)
+            guard !samples.isEmpty else { return }
+            onFrame(samples)
         }
-        guard err == nil, let ch = out.floatChannelData else { return [] }
-        return Array(UnsafeBufferPointer(start: ch[0], count: Int(out.frameLength)))
+
+        /// Copy the buffer's Float32 samples out. The block buffer is retained for
+        /// the call and released on return, so no memory escapes the delegate.
+        static func floatSamples(from sampleBuffer: CMSampleBuffer) -> [Float] {
+            var list = AudioBufferList()
+            var block: CMBlockBuffer?
+            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+                sampleBuffer,
+                bufferListSizeNeededOut: nil,
+                bufferListOut: &list,
+                bufferListSize: MemoryLayout<AudioBufferList>.size,
+                blockBufferAllocator: nil,
+                blockBufferMemoryAllocator: nil,
+                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                blockBufferOut: &block)
+            guard status == noErr, block != nil else { return [] }
+            var samples: [Float] = []
+            for buffer in UnsafeMutableAudioBufferListPointer(&list) {
+                guard let data = buffer.mData else { continue }
+                let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                guard count > 0 else { continue }
+                samples.append(contentsOf: UnsafeBufferPointer(
+                    start: data.assumingMemoryBound(to: Float.self), count: count))
+            }
+            return samples
+        }
     }
 }
