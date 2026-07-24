@@ -1,115 +1,127 @@
+<div align="center">
+
+<img src="Resources/hero.png" alt="Hey Codex" width="640">
+
 # Hey Codex
 
-**Say “Hey Codex.” ChatGPT Voice opens. That's the whole tool.**
+**Say "Hey Codex." ChatGPT Voice opens. Keep your hands where they are.**
 
-Hey Codex is a small, open-source macOS menu-bar app. It listens on your Mac for a wake phrase and presses the same ChatGPT Voice hotkey you'd press yourself — so Voice becomes hands-free without you touching the keyboard.
+[![Download](https://img.shields.io/github/v/release/cyburke/hey-codex?label=download&style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
+[![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-black?style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
+[![Size](https://img.shields.io/badge/download-18%20MB-green?style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
 
-It does not record you, does not send audio anywhere, and does not automate or drive the ChatGPT app. It presses one hotkey.
+</div>
 
-Not affiliated with or endorsed by OpenAI.
+---
+
+OpenAI shipped Voice mode in the ChatGPT desktop app. It is genuinely good, and it opens with a keyboard shortcut.
+
+Hey Codex removes the keyboard. It sits in your menu bar, listens for a wake phrase, and presses that same shortcut for you. That is the entire tool.
+
+Nothing is recorded. Nothing is uploaded. No account, no signup, no config file.
 
 ## Install
 
-### Homebrew
+**Homebrew**
 
 ```bash
 brew install --cask --no-quarantine cyburke/tap/hey-codex
 ```
 
-The `--no-quarantine` flag is required because this app is not notarized — see [Why the security warning](#why-the-security-warning) below.
+**Or download it**
 
-### Direct download
+1. Grab `HeyCodex.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
+2. Unzip, drag **HeyCodex.app** into Applications.
+3. Open it. macOS blocks it the first time.
+4. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway**.
 
-1. Download `HeyCodex.app.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest) (about 18 MB).
-2. Unzip it and drag **HeyCodex.app** to your Applications folder.
-3. Open it. macOS will refuse the first time.
-4. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the Hey Codex message. Confirm.
+Step 4 happens once. [Here is why](#why-macos-warns-you).
 
-You only do step 4 once.
+## Set it up
 
-## Setup
+1. In **ChatGPT → Settings → Voice**, check the **Voice chat hotkey**. Hey Codex expects `⌃⌥V`. Any chord works as long as both apps agree.
+2. Launch Hey Codex. A small wake icon appears in your menu bar.
+3. Allow **Microphone** when asked. That is how it hears you.
+4. Click **Enable ChatGPT Voice**, then allow **Accessibility**. That is how it presses the hotkey.
+5. Say **"Hey Codex."**
 
-1. In **ChatGPT → Settings → Voice**, note or set the **Voice chat hotkey**. The default Hey Codex expects is **⌃⌥V** (Control-Option-V). If you use a different chord, set the same one in Hey Codex's Settings — they must match, because Hey Codex is simply pressing that hotkey for you.
-2. Launch Hey Codex. A small wake-signal icon appears in your menu bar. It is deliberately not a microphone icon, so you can tell it apart from macOS's own mic-in-use indicator.
-3. Approve **Microphone** access when the setup window asks. This is what lets Hey Codex hear the wake phrase locally.
-4. Choose **Enable ChatGPT Voice** in the same window. macOS asks for Accessibility permission — that's what allows Hey Codex to press a hotkey. Enable **Hey Codex** in **System Settings → Privacy & Security → Accessibility**, come back, and run **Test ChatGPT Voice**.
-5. Say **“Hey Codex.”**
+Done. To end a Voice session, close it in ChatGPT however you normally would. Hey Codex notices and starts listening again by itself. There is no second phrase to memorize.
 
-To end a Voice session, just close it in ChatGPT like you normally would — click away, press the hotkey, or tell it you're done. Hey Codex notices and starts listening again on its own. There's no "stop" phrase to remember.
+## What makes it not annoying
 
-## How it behaves
+Most wake-word tools get one thing wrong: they fire the shortcut and assume it worked. Since the ChatGPT hotkey is a toggle, that means saying your phrase while Voice is already open hangs up on you.
 
-- **Saying the phrase while Voice is already open does nothing.** It won't hang up on you — including when you opened Voice yourself with the keyboard.
-- **It re-arms by itself** when Voice ends, however it ended.
-- **It works whether or not ChatGPT is the frontmost app.**
-- **It listens for one phrase and nothing else.** While a Voice session is open it isn't even listening, so your conversation can't trigger it.
+Hey Codex checks whether ChatGPT's Voice panel is actually on screen before it does anything.
 
-### Your own wake phrase
+| Situation | What happens |
+| --- | --- |
+| You say the phrase | Voice opens |
+| You say it again while Voice is open | Nothing. It will not hang up on you |
+| You opened Voice with the keyboard yourself | It knows, and stays quiet |
+| Voice ends, any way at all | It starts listening again on its own |
+| ChatGPT is the frontmost app | Still works |
 
-“Hey Codex” works out of the box. To use something else, choose **Use My Own Wake Phrase…** from the menu bar, type a phrase, and say it three times.
+While a Voice session is open it stops listening entirely, so your conversation cannot set it off.
 
-Those three recordings never leave your Mac. They're used to derive the keyword from the tokens the speech model *actually emits for your voice*, then the detection threshold is tuned down until all three of your recordings fire. That's why enrollment beats picking from a list: a keyword guessed from spelling matches a generic speaker, not you.
+## Use your own wake phrase
 
-Multi-word phrases are strongly recommended — single words trigger accidentally. **Back to “Hey Codex”** in the same window undoes it at any time.
+"Hey Codex" is the default. For anything else, pick **Use My Own Wake Phrase** from the menu, type a phrase, and say it three times.
 
-### How it knows
+Those recordings never leave your Mac. They exist to build the keyword from how the speech model hears *your* voice, then the detector is tuned until all three of your takes fire. That is why it beats picking from a list. A keyword guessed from spelling matches a generic speaker, not you.
 
-ChatGPT has no API for "is Voice open," so Hey Codex checks whether ChatGPT's own process currently owns a floating window that's on screen. That's all it reads — not the window's contents, title, position, or size — and it needs no Screen Recording permission.
-
-This is treated as a bonus, never a dependency. Until Hey Codex has actually seen a Voice panel on your Mac, it assumes nothing. If OpenAI ever restructures that panel, Hey Codex quietly falls back to just sending the hotkey, the way it worked before. It degrades; it doesn't break.
+Longer phrases are better. Single words go off by accident. Switching back to "Hey Codex" is one button.
 
 ## Privacy
 
-Wake-word detection runs entirely on your Mac using a bundled offline model. No audio, no transcripts, and no wake events ever leave your machine. There is no analytics and no telemetry.
+Wake-word detection runs on your Mac with a bundled offline model. No audio, no transcripts, no wake events, ever, to anyone. No analytics. No telemetry.
 
-Hey Codex makes exactly one kind of network request: a once-a-day check with GitHub asking whether a newer release exists. It sends nothing about you. Turn off **Check for updates automatically** in Settings and the app makes no network requests at all.
+There is exactly one network request in the whole app: once a day it asks GitHub whether a newer release exists. It sends nothing about you, and you can switch it off in Settings, at which point Hey Codex makes no network requests at all.
 
-The two permissions it asks for are the two it needs: **Microphone**, to hear the phrase, and **Accessibility**, to press the hotkey. You can revoke either in System Settings at any time.
+Two permissions, both doing the obvious thing:
 
-Once Voice starts, ChatGPT does whatever ChatGPT does, under its own settings and privacy policy. That part is between you and OpenAI.
+- **Microphone**, to hear the phrase.
+- **Accessibility**, to press the hotkey.
 
-## Why the security warning
+Revoke either in System Settings whenever you like.
 
-Hey Codex is not notarized by Apple. Notarization requires a paid Apple Developer account, and this is a free tool.
+## Why macOS warns you
 
-That means macOS Gatekeeper flags it on first launch. It's not a claim that the app is unsafe — it's a claim that Apple hasn't been paid to vouch for it. The source is all here; you can read it or build it yourself.
+Hey Codex is not notarized. Notarization requires a paid Apple Developer account, and this is free software.
 
-If someone with an Apple Developer ID wants to contribute a notarized build, open an issue.
+Gatekeeper reads "not notarized" as "unknown," so it warns you. That is a statement about Apple's paperwork, not about the app. Every line of source is in this repo, and you can build it yourself in about a minute if you would rather not take my word for it.
 
-## Known limitations
+If you hold an Apple Developer ID and want to contribute a notarized build, please open an issue. That would be a genuinely useful contribution.
 
-- **Updates are not automatic.** Hey Codex tells you when a new release exists, but you install it yourself by re-downloading or running `brew upgrade hey-codex`.
-- **Upgrading may re-prompt for permissions.** Because the app isn't signed with a stable Apple identity, macOS can see a new build as a new app and ask for Microphone and Accessibility again. Annoying, not broken.
-- Like every wake-word tool, it can occasionally miss the phrase or fire on something that sounds close.
+## Known limits
 
-## Build from source
+- Updates are not automatic. Hey Codex tells you when a release exists, you install it.
+- Upgrading can re-prompt for Microphone and Accessibility, because an unsigned build looks like a new app to macOS.
+- It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
 
-Requirements: macOS 14.4 or later, and Swift 6 (Xcode or the Command Line Tools).
+## Build it yourself
+
+Needs macOS 14.4 or later and Swift 6.
 
 ```bash
+git clone https://github.com/cyburke/hey-codex.git
+cd hey-codex
 ./scripts/fetch-sherpa.sh
 ./scripts/fetch-models.sh
-swift build --product HeyCodexApp -c release
 swift test
 ./scripts/build-release.sh
 ```
 
-The bundle is written to `dist/HeyCodex.app` (~30 MB) with an ad-hoc signature. To build with a stable Apple Development identity for permission testing:
+The bundle lands in `dist/HeyCodex.app`.
 
-```bash
-HEYCODEX_SIGN_ID='Apple Development: Your Name (TEAMID)' ./scripts/build-signed-local.sh
-```
+## Something broken?
 
-`scripts/fetch-models.sh` skips a large optional speech model that only the developer decode probes use. Set `HEYCODEX_FETCH_ASR=1` if you need it.
+[Open an issue.](https://github.com/cyburke/hey-codex/issues/new/choose) The template asks for the handful of details that make a report actionable. Please skip recordings and transcripts unless you are happy for them to be public.
 
-## Reporting bugs
+## Credit
 
-Open an issue with your macOS version, the Hey Codex version, what the menu-bar item said at the time, whether Microphone and Accessibility were enabled, and the exact hotkey configured in both apps.
+Hey Codex is a GPL-3.0 fork of **[littlemelon77/hey-claude](https://github.com/littlemelon77/hey-claude)**. The wake-word listener and audio capture pipeline are that project's work, and this would not exist without it. Hey Codex rebuilds the activation logic and interface around ChatGPT Voice.
 
-Please don't attach recordings or transcripts unless you're comfortable making them public.
+Wake-word detection uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) by Xiaomi Corporation.
 
-## Credit and license
-
-Hey Codex is a GPL-3.0 fork of **[littlemelon77/hey-claude](https://github.com/littlemelon77/hey-claude)** — the original wake-word listener, audio capture pipeline, and app skeleton are that project's work. Hey Codex rebuilds the activation logic and interface around ChatGPT Voice, but it stands on that foundation.
-
-Licensed under [GPL-3.0](LICENSE). See [NOTICE](NOTICE) for full upstream and dependency attribution. Modified versions must stay GPL-3.0 and provide corresponding source.
+Licensed under [GPL-3.0](LICENSE). Full attribution in [NOTICE](NOTICE). Not affiliated with OpenAI.
