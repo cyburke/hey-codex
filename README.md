@@ -23,20 +23,29 @@ Nothing is recorded. Nothing is uploaded. No account, no signup, no config file.
 
 ## Install
 
-**Homebrew**
+**Homebrew, recommended**
 
 ```bash
 brew install --cask cyburke/tap/hey-codex
-open /Applications/HeyCodex.app
 ```
+
+That is the whole install. Open it from Applications and it launches straight away.
 
 **Or download it**
 
 1. Grab the `.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
-2. Unzip, drag **HeyCodex.app** into Applications.
-3. Open it.
+2. Unzip and drag **HeyCodex.app** into Applications.
+3. Run this once, which takes about two seconds:
 
-**Either way, macOS blocks it the first time.** Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the Hey Codex message. That happens once, and [here is why](#why-macos-warns-you).
+```bash
+xattr -dr com.apple.quarantine /Applications/HeyCodex.app
+```
+
+4. Open it.
+
+If you would rather not touch a terminal, skip step 3, open the app, click **Done** on the warning, then go to **System Settings → Privacy & Security**, scroll to Security, and click **Open Anyway**. Same result.
+
+Both routes exist because Hey Codex is not notarized by Apple. [Here is why that is, and what it does and does not mean.](#why-macos-warns-you)
 
 ## Set it up
 
@@ -89,7 +98,9 @@ Revoke either in System Settings whenever you like.
 
 Hey Codex is not notarized. Notarization requires a paid Apple Developer account, and this is free software.
 
-Gatekeeper reads "not notarized" as "unknown," so it warns you. That is a statement about Apple's paperwork, not about the app. Every line of source is in this repo, and you can build it yourself in about a minute if you would rather not take my word for it.
+Gatekeeper reads "not notarized" as "unknown," so macOS quarantines the download. That is a statement about Apple's paperwork, not about the app. Every line of source is in this repo, and you can build it yourself in about a minute if you would rather not take my word for it.
+
+The Homebrew cask clears that quarantine flag for you during install, which is why it launches without a prompt. If you would rather macOS keep its guard up and approve the app yourself, install from the zip and use the System Settings route instead.
 
 If you hold an Apple Developer ID and want to contribute a notarized build, please open an issue. That would be a genuinely useful contribution.
 
