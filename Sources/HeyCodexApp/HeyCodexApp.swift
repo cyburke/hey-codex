@@ -21,7 +21,9 @@ enum HeyCodexMain {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = AppController()
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    // variableLength, not squareLength: the item has to widen to fit the
+    // setup label. A square item silently clips every title to nothing.
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private var settingsWindow: SettingsWindowController?
     private var enrollmentWindow: WakePhraseEnrollmentWindowController?
     private var setupPoll: Timer?
@@ -181,13 +183,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // An icon alone cannot say "you still need to do something here", and a
         // symbol among a dozen other menu bar symbols is not noticeable. While
         // setup is unfinished the item carries readable text instead.
+        let label: String
         if !state.isComplete {
-            statusItem.button?.title = " Set up Hey Codex"
+            label = "Set up Hey Codex"
         } else if let until = readyBannerUntil, Date() < until {
-            statusItem.button?.title = " Say “\(controller.settings.wakePhrase)”"
+            label = "Say “\(controller.settings.wakePhrase)”"
         } else {
-            statusItem.button?.title = ""
+            label = ""
             readyBannerUntil = nil
+        }
+        if let button = statusItem.button {
+            button.title = label
+            button.font = .systemFont(ofSize: 13, weight: .medium)
+            // Without an explicit position the image and title fight for the
+            // same space and the text loses.
+            button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
+            button.imageHugsTitle = true
         }
 
         let name: String
