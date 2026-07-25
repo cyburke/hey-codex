@@ -182,7 +182,15 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 case .good:
                     self.beginRecording()
                 case .cannotSpot:
-                    self.warn("A test run of “\(phrase)” did not register, so it may not work well. Your own voice is what counts, though — record it and see.")
+                    // Name the real cause when there is one (AUDIT-2026-07-24.md):
+                    // this model has no way to spell a word starting with X or Z.
+                    // Still just a warning - record it and see, and a shorter
+                    // spelling of the same phrase may work even when the full
+                    // phrase does not.
+                    let reason = WakePhraseFitness.startsWithUnspellableLetter(phrase)
+                        ? " This model can't spell words that start with X or Z, so there is nothing there for it to hear."
+                        : ""
+                    self.warn("A test run of “\(phrase)” did not register, so it may not work well.\(reason) Your own voice is what counts, though. Record it and see.")
                 case .tooCommon:
                     self.warn("“\(phrase)” sounds close to ordinary conversation, so it might open Voice while you are talking to someone else. Record it anyway if you want to try.")
                 }
@@ -290,18 +298,6 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
         let phrase = phraseField.stringValue
 
-        // The keyword is the phrase's own spelling. Deriving it from what the model
-        // decoded out of a recording was measured and does not work: those lines
-        // fire on nothing, not even the takes they came from.
-        guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsModel) else {
-            progress.textColor = .systemOrange
-            progress.stringValue = "This model cannot spell that phrase. Try ordinary words, or a different phrase."
-            phraseField.isEnabled = true
-            startButton.isEnabled = true
-            restoreListening()
-            return
-        }
-
         progress.textColor = .labelColor
         progress.stringValue = "Tuning it to your voice…"
         let captured = samples.map(\.audio)
@@ -310,28 +306,59 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             let calibration = WakeCalibration(fires: { line, threshold, audio in
                 Self.fires(line, threshold: threshold, audio: audio, modelDir: kwsModel)
             })
-            let result = calibration.calibrate(tokens: tokens, samples: captured)
-            // A bare "0 of 3 fired" cannot say whether the takes or the phrase were
-            // the problem, so record what fired at each threshold.
-            let grid = result.isUsable ? "" : EnrollmentDiagnostics.grid(
-                lines: [tokens],
-                thresholds: KeywordTuning.calibrationThresholds,
-                samples: captured,
-                fires: { line, threshold, audio in
-                    calibration.fires(WakeCalibration.keywordLine(tokens: line, threshold: threshold),
-                                      threshold, audio)
-                })
+            let tokenize: (String) -> String? = { KeywordTokenizer.tokenize($0, modelDir: kwsModel) }
+            // Screened once, against every candidate: MANDATORY SAFETY per
+            // AUDIT-2026-07-24.md - nothing gets armed without first proving it
+            // stays quiet on ordinary speech.
+            let negatives = SynthesizedSpeech.falseAlarmClips()
+            let search = WakeCandidateSearch.search(phrase: phrase, samples: captured,
+                                                    negatives: negatives, tokenize: tokenize,
+                                                    calibration: calibration)
+
+            // Diagnostics always have *something* to report against, even when no
+            // candidate became usable: the phrase's own spelling if it tokenizes,
+            // otherwise the first candidate that does. Without this, a rejected
+            // enrollment of an unspellable phrase leaves no trail to explain it.
+            let candidatePhrases = WakeCandidateSearch.candidatePhrases(for: phrase)
+            let diagnosticTokens = search?.candidate.tokens
+                ?? tokenize(phrase)
+                ?? candidatePhrases.lazy.compactMap(tokenize).first
+                ?? ""
             EnrollmentDiagnostics.saveAudioIfEnabled(captured)
-            EnrollmentDiagnostics.record(phrase: phrase,
-                                         tokens: tokens,
-                                         sampleCounts: captured.map(\.count),
-                                         grid: grid,
-                                         result: result)
+            // Diagnosed fire count for the failure message: how well the best
+            // reported spelling actually did against these takes, not a bare
+            // hardcoded zero. `search` being nil does not mean nothing ever
+            // fired - it means nothing fired ENOUGH (isUsable) or safely
+            // (the false-alarm screen); this is still worth telling apart
+            // from a phrase this model cannot spell at all.
+            var failedFiredCount = 0
+            if search == nil, !diagnosticTokens.isEmpty {
+                let grid = EnrollmentDiagnostics.grid(
+                    lines: [diagnosticTokens],
+                    thresholds: KeywordTuning.calibrationThresholds,
+                    samples: captured,
+                    fires: { line, threshold, audio in
+                        calibration.fires(WakeCalibration.keywordLine(tokens: line, threshold: threshold),
+                                          threshold, audio)
+                    })
+                let failed = calibration.calibrate(tokens: diagnosticTokens, samples: captured)
+                failedFiredCount = failed.firedCount
+                EnrollmentDiagnostics.record(phrase: phrase, tokens: diagnosticTokens,
+                                             sampleCounts: captured.map(\.count), grid: grid,
+                                             result: failed)
+            } else if let search {
+                EnrollmentDiagnostics.record(phrase: phrase, tokens: search.candidate.tokens,
+                                             sampleCounts: captured.map(\.count), grid: "",
+                                             result: search.calibration)
+            }
+
             await MainActor.run {
                 guard let self else { return }
-                guard result.isUsable else {
+                guard let search else {
                     self.progress.textColor = .systemOrange
-                    self.progress.stringValue = self.failureMessage(firedCount: result.firedCount)
+                    self.progress.stringValue = diagnosticTokens.isEmpty
+                        ? "This model cannot spell that phrase. Try ordinary words, or a different phrase."
+                        : self.failureMessage(firedCount: failedFiredCount)
                     self.phraseField.isEnabled = true
                     self.startButton.isEnabled = true
                     self.restoreListening()
@@ -339,9 +366,9 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 }
                 do {
                     try self.controller.completeEnrollment(phrase: phrase,
-                                                          keywordLines: [result.keywordLine],
-                                                          threshold: result.threshold)
-                    self.showSuccess(phrase: phrase, result: result)
+                                                          keywordLines: [search.calibration.keywordLine],
+                                                          threshold: search.calibration.threshold)
+                    self.showSuccess(phrase: phrase, candidate: search.candidate, result: search.calibration)
                 } catch {
                     self.progress.textColor = .systemOrange
                     self.progress.stringValue = error.localizedDescription
@@ -370,10 +397,18 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
 
     /// Confirmation belongs in this window. An NSAlert here was the only modal in
     /// the whole app, and it read as something having gone wrong.
-    private func showSuccess(phrase: String, result: WakeCalibration.Result) {
+    ///
+    /// MANDATORY HONESTY (AUDIT-2026-07-24.md): when the armed spelling is not
+    /// the phrase the user typed, they are told plainly what the app is
+    /// actually listening for. Never a silent substitution.
+    private func showSuccess(phrase: String, candidate: WakeCandidateSearch.Candidate,
+                             result: WakeCalibration.Result) {
         didSucceed = true
         titleLabel.stringValue = "“\(phrase)” is your wake phrase 🎉"
         var lines = ["Try it now: say “\(phrase)” and ChatGPT Voice should open."]
+        if !candidate.isFullPhrase {
+            lines.append("To make it reliable, Hey Codex is actually listening for just “\(candidate.phrase)”, not the whole phrase. Say that part clearly and it will still open.")
+        }
         if !result.allFired {
             lines.append("Two of your three takes matched, which is enough. Re-record if it feels unreliable.")
         }

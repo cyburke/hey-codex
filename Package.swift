@@ -85,6 +85,7 @@ let package = Package(
                 "SetupStateTests.swift",
                 "UpdateCheckTests.swift",
                 "WakeCalibrationTests.swift",
+                "WakeCandidateSearchTests.swift",
                 "VoiceShortcutTests.swift",
                 "WakeEnrollmentTests.swift",
                 "WakePhraseTests.swift",

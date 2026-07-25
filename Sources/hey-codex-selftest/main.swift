@@ -314,9 +314,6 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
             .map { AudioSamples.normalized($0, targetRMS: EnrollmentRecorder.targetRMS,
                                            peakCeiling: EnrollmentRecorder.peakCeiling) }
         c.assertEqual(clips.count, takes.count, "every saved take should load")
-        guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
-            c.fail("cannot tokenise \(phrase)"); return
-        }
         let calibration = WakeCalibration(fires: { line, threshold, audio in
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("rp-\(UUID().uuidString).txt")
@@ -326,31 +323,47 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
                                              keywordsThreshold: threshold) else { return false }
             return e.detects(in: audio)
         })
+        let tokenize: (String) -> String? = { KeywordTokenizer.tokenize($0, modelDir: kwsDir) }
+        let negatives = SynthesizedSpeech.falseAlarmClips()
+
         print("  phrase=\(phrase)")
-        print("  keyword=[\(tokens)]")
-        let verdict = WakePhraseFitness.check(tokens: tokens,
-                                             spoken: SynthesizedSpeech.samples(of: phrase),
-                                             negatives: SynthesizedSpeech.falseAlarmClips(),
-                                             fires: calibration.fires)
-        print("  fitness=\(verdict)")
+        print("  candidates tried, in order: " +
+              WakeCandidateSearch.candidatePhrases(for: phrase).joined(separator: " -> "))
+        if let fullTokens = tokenize(phrase) {
+            let verdict = WakePhraseFitness.check(tokens: fullTokens,
+                                                 spoken: SynthesizedSpeech.samples(of: phrase),
+                                                 negatives: negatives, fires: calibration.fires)
+            print("  full-phrase keyword=[\(fullTokens)]  fitness=\(verdict)")
+        } else {
+            print("  full-phrase keyword=<this model cannot spell it>")
+        }
+
+        // The whole feature this probe exists to prove: does SOME spelling of
+        // the phrase, not necessarily the literal one, end up usable on these
+        // real takes? See AUDIT-2026-07-24.md and WakeCandidateSearch.
+        guard let search = WakeCandidateSearch.search(phrase: phrase, samples: clips,
+                                                       negatives: negatives, tokenize: tokenize,
+                                                       calibration: calibration) else {
+            c.fail("no spelling of \"\(phrase)\" - literal or fallback - is usable on these takes")
+            return
+        }
+        let result = search.calibration
+        print("  WINNING CANDIDATE: \"\(search.candidate.phrase)\"" +
+              (search.candidate.isFullPhrase ? " (the full phrase)" : " (fallback - not the literal phrase)"))
+        print("  keyword=[\(search.candidate.tokens)]")
         let sweep = KeywordTuning.calibrationThresholds
         let row = sweep.map { threshold in
             clips.filter {
-                calibration.fires(WakeCalibration.keywordLine(tokens: tokens, threshold: threshold),
+                calibration.fires(WakeCalibration.keywordLine(tokens: search.candidate.tokens, threshold: threshold),
                                   threshold, $0)
             }.count
         }
         print("  takes fired: " + zip(sweep, row).map { String(format: "%.2f:%d", $0, $1) }
                                                 .joined(separator: " "))
-        let result = calibration.calibrate(tokens: tokens, samples: clips)
         print(String(format: "  threshold=%.2f fired=%d/%d usable=%@",
                      result.threshold, result.firedCount, result.sampleCount,
                      result.isUsable ? "yes" : "NO"))
-        // Fitness is advisory: a warning that turns out to be wrong is fine, a
-        // clearance that turns out to be wrong is not.
-        if verdict == .good {
-            c.assert(result.isUsable, "fitness cleared this phrase but no recording of it fires")
-        }
+        c.assert(result.isUsable, "the winning candidate must actually be usable on these takes")
 
         // P1.1: does capture-time gain normalization actually rescue a phrase
         // silenced by level alone, without also rescuing ordinary speech into a
@@ -398,6 +411,69 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
     }
 }
 
+
+/// Do the two detection paths agree?
+///
+/// The live mic loop calls `WakeWordEngine.feed`, which streams frames into a
+/// stream that stays alive across calls. Enrollment validation calls
+/// `detects(in:)`, which pads a second of silence and calls `inputFinished`. If a
+/// clip fires on one and not the other, enrollment is grading a phrase by a
+/// measurement the running app never makes, and every "0 of 3" it reports is
+/// suspect.
+/// Run: `swift run hey-codex-selftest path-parity <phrase>`
+func probePathParity(_ phrase: String) -> Bool {
+    run("keyword.pathParity") { c in
+        guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
+            c.fail("cannot tokenise \(phrase)"); return
+        }
+        let dir = EnrollmentDiagnostics.audioDirectory
+        let takes = (1...3).map { dir.appendingPathComponent("take-\($0).wav") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !takes.isEmpty else { print("  [skip] no saved takes"); return }
+        let clips = takes.compactMap { try? AudioSamples.load($0) }
+
+        func engine(_ threshold: Float) -> WakeWordEngine? {
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pp-\(UUID().uuidString).txt")
+            try? (WakeCalibration.keywordLine(tokens: tokens) + "\n")
+                .write(to: file, atomically: true, encoding: .utf8)
+            return try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
+                                      keywordsThreshold: threshold)
+        }
+        // The mic delivers ~100ms frames; stream the clip the same way, and keep
+        // feeding silence afterwards the way a live mic never stops.
+        func firesStreaming(_ clip: [Float], threshold: Float) -> Bool {
+            guard let e = engine(threshold) else { return false }
+            let frame = 1600
+            var i = 0
+            while i < clip.count {
+                let chunk = Array(clip[i..<min(i + frame, clip.count)])
+                if e.feed(chunk) { return true }
+                i += frame
+            }
+            for _ in 0..<10 where e.feed([Float](repeating: 0, count: frame)) { return true }
+            return false
+        }
+        func firesOneShot(_ clip: [Float], threshold: Float) -> Bool {
+            guard let e = engine(threshold) else { return false }
+            return e.detects(in: clip)
+        }
+
+        print("  phrase=\(phrase)  keyword=[\(tokens)]")
+        print("  thresh | detects(in:)  feed() streaming")
+        var disagreements = 0
+        for threshold in KeywordTuning.calibrationThresholds {
+            let oneShot = clips.filter { firesOneShot($0, threshold: threshold) }.count
+            let streamed = clips.filter { firesStreaming($0, threshold: threshold) }.count
+            if oneShot != streamed { disagreements += 1 }
+            print(String(format: "  %.2f   |     %d/%d            %d/%d%@",
+                         threshold, oneShot, clips.count, streamed, clips.count,
+                         oneShot == streamed ? "" : "   <-- DISAGREE"))
+        }
+        c.assertEqual(disagreements, 0,
+                      "the enrollment check and the live listener disagree on this phrase")
+    }
+}
 
 func probeSynthFidelity() -> Bool {
     run("keyword.synthFidelity") { c in
@@ -1041,6 +1117,10 @@ func main() -> Int32 {
         let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
         let editor = EditorKind(rawValue: editorArg) ?? .cursor
         return probeEditorOpenLive(editor) ? 0 : 1
+    }
+    if requested == "path-parity" {
+        let phrase = CommandLine.arguments.dropFirst(2).joined(separator: " ")
+        return probePathParity(phrase.isEmpty ? "hey codex" : phrase) ? 0 : 1
     }
     if requested == "synth-fidelity" {
         return probeSynthFidelity() ? 0 : 1
