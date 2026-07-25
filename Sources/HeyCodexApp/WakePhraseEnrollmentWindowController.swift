@@ -2,7 +2,7 @@ import AppKit
 import HeyCodexKit
 
 /// A small, local-only three-recording enrollment flow. It intentionally stops
-/// the listener while AVAudioEngine owns the microphone, then hands the tuned
+/// the listener while the recorder owns the microphone, then hands the tuned
 /// keyword lines back to AppController before listening resumes.
 @MainActor
 final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDelegate, NSTextFieldDelegate {
@@ -139,10 +139,10 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             return
         }
         let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
-        // Prompt only once the engine is running. Announcing "say it now" before
-        // AVAudioEngine has produced a buffer invites the user to speak into a
-        // microphone that is not listening yet, which reads as a failed capture
-        // and makes them repeat themselves.
+        // Prompt only once capture is running. Announcing "say it now" before the
+        // first buffer has arrived invites the user to speak into a microphone
+        // that is not listening yet, which reads as a failed capture and makes
+        // them repeat themselves.
         progress.textColor = .secondaryLabelColor
         progress.stringValue = "Warming up the microphone…"
         let kind: WakeEnrollment.Sample.Kind = samples.count < 2 ? .isolated : .natural
