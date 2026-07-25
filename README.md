@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Resources/hero.svg" alt="Hey Codex: ChatGPT Voice, hands free, from anywhere on your Mac" width="820">
+<img src="Resources/hero.png" alt="Hey Codex: ChatGPT Voice, hands free, from anywhere on your Mac" width="820">
 
 # Hey Codex
 
@@ -113,6 +113,14 @@ Gatekeeper reads "not notarized" as "unknown," so macOS quarantines the download
 The Homebrew cask clears that quarantine flag for you during install, which is why it launches without a prompt. If you would rather macOS keep its guard up and approve the app yourself, install from the zip and use the System Settings route instead.
 
 If you hold an Apple Developer ID and want to contribute a notarized build, please open an issue. That would be a genuinely useful contribution.
+
+## Why not just use macOS Voice Control?
+
+You can. Voice Control has custom commands, and one of the available actions is [pressing a keyboard shortcut](https://support.apple.com/guide/mac-help/customize-voice-control-mchl9899c8a5/mac), so a spoken phrase really can trigger ChatGPT Voice with nothing installed.
+
+The catch is what else comes along. Voice Control is a system-wide accessibility layer: switch it on and it listens for every command it knows, everywhere, and dictates unmatched speech into whatever field has focus. If you already use a dictation tool, the two compete for the same words. There is a sleep command to park it, but you will be using it constantly.
+
+Hey Codex listens for one phrase and does one thing. It never inserts text, never interprets anything else you say, and needs nothing switched on system-wide.
 
 ## Known limits
 
