@@ -133,11 +133,16 @@ final class AppController {
             mElement: kAudioObjectPropertyElementMain)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor in
-                guard let self, self.isListening else { return }
+                guard let self else { return }
+                let wanted = AudioCapture.systemDefaultInputUID ?? "nil"
+                let current = self.audio?.deviceUID ?? "nil"
+                Log.audio.info("default input changed: system=\(wanted, privacy: .public) current=\(current, privacy: .public) listening=\(self.isListening, privacy: .public) pinned=\(self.settings.inputDeviceUID ?? "none", privacy: .public)")
+                guard self.isListening else { return }
                 // Only meaningful when following the system default. An explicit
                 // choice should not be overridden by a system change.
                 guard self.settings.inputDeviceUID == nil else { return }
-                guard AudioCapture.systemDefaultInputUID != self.audio?.deviceUID else { return }
+                guard wanted != current else { return }
+                Log.audio.info("switching capture to \(wanted, privacy: .public)")
                 self.stopPipeline()
                 self.startListening()
             }
@@ -156,9 +161,11 @@ final class AppController {
             AVCaptureDevice.wasDisconnectedNotification,
         ]
         for name in names {
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 Task { @MainActor in
-                    guard let self, self.isListening else { return }
+                    guard let self else { return }
+                    Log.audio.info("device \(name.rawValue, privacy: .public)")
+                    guard self.isListening else { return }
                     self.stopPipeline()
                     self.startListening()
                 }
@@ -293,6 +300,7 @@ final class AppController {
             self.wake = wake
             self.audio = mic
             self.activeInputName = mic.deviceName
+            Log.audio.info("capture started on \(mic.deviceName, privacy: .public) uid=\(mic.deviceUID, privacy: .public)")
             try mic.start()
             status = activation.isArmed ? .listening : .latched
         } catch {

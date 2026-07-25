@@ -187,7 +187,7 @@ final class SettingsWindowController: NSWindowController {
             inputHint.stringValue = "\(chosen) is not connected right now, so Hey Codex is listening on \(controller.activeInputName ?? "another microphone") instead. It will switch back on its own when \(chosen) reconnects. Pick Automatic if you would rather it stopped waiting."
         } else if controller.settings.inputDeviceUID == nil {
             let active = controller.activeInputName ?? "your current microphone"
-            inputHint.stringValue = "Listening on \(active). Connect earbuds or a USB mic and Hey Codex follows your Mac automatically, so there is nothing to change here. Only pick a specific microphone if you want to override that."
+            inputHint.stringValue = "Listening on \(active). Hey Codex uses whichever microphone your Mac is set to, so switch input in System Settings, Sound and it follows along. Pick a specific one here only if you want to override that."
         } else if let active = controller.activeInputName {
             inputHint.stringValue = "Locked to \(active), so Hey Codex will keep using it even if your Mac switches to something else. Choose Automatic to follow your Mac again."
         } else {

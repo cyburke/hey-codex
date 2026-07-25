@@ -89,9 +89,11 @@ Two or three words works best, since single words tend to go off when you did no
 
 ## Earbuds and other microphones
 
-Nothing to configure. Hey Codex follows whichever microphone your Mac is using, so connect earbuds and it switches over on its own. Take them out and it switches back.
+Hey Codex uses whichever microphone your Mac is set to. Switch input in **System Settings → Sound** and it follows along, so there is nothing to configure here.
 
-If you would rather pin it to one specific microphone, Settings has a picker. A pinned device that gets unplugged falls back to another one so the app keeps working, and resumes the moment it reconnects.
+Worth knowing: macOS does not switch to Bluetooth earbuds by itself when they connect. You choose that in Sound settings, the same as you already do for output. Hey Codex just goes wherever you point your Mac.
+
+If you would rather pin it to one specific microphone regardless of what your Mac is doing, Settings has a picker. A pinned device that gets unplugged falls back to another one so the app keeps working, and resumes the moment it reconnects.
 
 ## Privacy
 
