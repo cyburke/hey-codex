@@ -31,6 +31,15 @@ real defects in each.
 
 ### Added
 
+- **Microphone selection.** Settings lists every connected input, with Automatic
+  following whatever the Mac is set to. Automatic watches
+  `kAudioHardwarePropertyDefaultInputDevice`, since connect and disconnect
+  notifications alone miss the common case of switching input while both devices
+  are attached. A pinned device that gets unplugged falls back so the app keeps
+  working, keeps the preference, and resumes when it returns.
+- **Starts ChatGPT when it is closed.** ChatGPT registers its Voice hotkey with
+  Carbon at launch, so with the app closed a press reaches nothing at all. Hey
+  Codex now launches it, waits for it to finish starting, and then presses.
 - **A real setup window**, three steps: what the app does, both permissions with
   live state, then one test that confirms the hotkey matches ChatGPT. Reopenable
   from the menu as Setup & Diagnostics, because permissions get revoked.

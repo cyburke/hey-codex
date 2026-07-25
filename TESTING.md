@@ -32,6 +32,10 @@ mv ~/Library/Application\ Support/HeyCodex ~/Library/Application\ Support/HeyCod
 11. **Custom phrase:** enrol a multi-word phrase, confirm it wakes and the old one no longer does, then **Back to "Hey Codex"** and confirm the default works again.
 12. **Enrollment returns the microphone:** after enrolling, and after cancelling mid-enrolment by closing the window, listening resumes without relaunching.
 13. **No hidden off state:** the menu never offers a Stop or Pause listener action. Quitting is the only way to stop it.
-14. **No crash reports:** `ls ~/Library/Logs/DiagnosticReports/HeyCodex*` is empty afterwards.
+14. **Microphone follows the Mac:** with Automatic selected, change the input in System Settings, Sound to a different microphone. Hey Codex switches without being touched, and the wake phrase works through the new one. Verify with `swift run hey-codex-selftest audio-footprint` that no device was created.
+15. **Bluetooth earbuds:** connect earbuds, set them as input, and confirm the wake phrase works through them. Earbud microphones sound nothing like a desk microphone, so this is a real detection test and not just a routing one.
+16. **A pinned microphone survives disconnection:** pin a specific device in Settings, disconnect it, and confirm the app keeps listening on another one, names both in Settings, and returns to the pinned device when it reconnects. The preference must still be there afterwards.
+17. **ChatGPT closed:** quit ChatGPT entirely, then say the phrase. Hey Codex starts ChatGPT, waits for it, and Voice opens. A hotkey press with ChatGPT closed reaches nothing, so this path has its own failure mode.
+18. **No crash reports:** `ls ~/Library/Logs/DiagnosticReports/HeyCodex*` is empty afterwards.
 
 Record the exact ChatGPT desktop version and the pass/fail result for each gate before any public release decision.
