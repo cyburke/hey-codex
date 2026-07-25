@@ -47,6 +47,7 @@ let package = Package(
                 "AppController.swift",
                 "HeyCodexApp.swift",
                 "SettingsWindowController.swift",
+                "SetupWindowController.swift",
                 "WakePhraseEnrollmentWindowController.swift",
                 "WakeWordEngineHolder.swift"
             ]

@@ -49,21 +49,15 @@ Both routes exist because Hey Codex is not notarized by Apple. [Here is why that
 
 ## Set it up
 
-Setup happens in the menu bar. There are no windows and nothing to hunt for: the menu bar item tells you what is left to do, and stops asking once it is done.
+Launch Hey Codex and a setup window walks you through it in three steps. It takes about a minute.
 
-First, in **ChatGPT → Settings → Voice**, check the **Voice chat hotkey**. Hey Codex expects `⌃⌥V`. Any chord works as long as both apps agree.
+1. **What it does** and why an always-listening app is safe here.
+2. **Two permissions**, both on one page, each ticking green as you grant it. **Microphone** so it can hear the phrase, **Accessibility** so it can press the hotkey. After Accessibility the app restarts itself, because macOS only hands a fresh permission to a fresh process. The window comes back on its own.
+3. **One test**, which confirms the hotkey in ChatGPT actually matches. Then you are done.
 
-Then launch Hey Codex and follow the menu bar:
+The one thing to do yourself: in **ChatGPT → Settings → Voice**, make sure the **Voice chat hotkey** is `⌃⌥V`. Any chord works as long as both apps agree, and step 3 tells you if they do not.
 
-| It says | You do |
-| --- | --- |
-| **Set up Hey Codex: step 1 of 2** | Click it, allow **Microphone**. This is how it hears you. |
-| **Set up Hey Codex: step 2 of 2** | Click it, allow **Accessibility**. This is how it presses the hotkey. |
-| **Finishing setup...** | Nothing. It restarts itself so macOS hands it the new permission. |
-| **Ready: click to test** | Click **Try It: Test ChatGPT Voice**. Confirms your hotkey matches. |
-| **All set. Say "Hey Codex" anytime** | Say it. |
-
-Orange means something is still waiting on you. Green means it just finished. A plain icon means it is listening and out of your way.
+If setup is unfinished, your menu bar says so in orange, so an install that stalled is never silent. You can reopen the window any time from **Setup & Diagnostics** in the menu, which is also the fastest way to see whether a permission got revoked later.
 
 To end a Voice session, close it in ChatGPT however you normally would. Hey Codex notices and starts listening again by itself. There is no second phrase to memorize.
 
@@ -129,6 +123,28 @@ Hey Codex listens for one phrase and does one thing. It never inserts text, neve
 - Upgrading can re-prompt for Microphone and Accessibility, because a rebuilt app can look like a new app to macOS.
 - It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
 
+## How it works
+
+Four moving parts, none of them clever:
+
+| Part | What it does |
+| --- | --- |
+| **Wake word** | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) keyword spotting against a 13 MB offline zipformer model. Runs on CPU, never contacts a network. |
+| **Capture** | `AVCaptureSession` delivering 16 kHz mono audio. Input only, deliberately — see the note below. |
+| **The press** | One `CGEvent` sequence posted to the system HID tap, which is what ChatGPT's Carbon hotkey listens on. |
+| **State** | Reads whether ChatGPT's own Voice panel is on screen, so the app knows whether a session is actually open instead of guessing. |
+
+**Why capture is input-only.** `AVAudioEngine` looks like the obvious choice, and it is wrong for this. On macOS it runs a single I/O unit spanning the default input *and* output, and simply installing an input tap makes CoreAudio fabricate a running aggregate device across both. Measured on a Mac whose monitor carries audio in and out over one USB connection:
+
+```
+AVAudioEngine      devices 5 -> 6    NEW: CADefaultDeviceAggregate in:2 out:2 IO-RUNNING
+AVCaptureSession   devices 5 -> 5    the microphone only,          in:2 out:0 IO-RUNNING
+```
+
+An app that listens for a wake word has no business activating your speakers. `swift run hey-codex-selftest audio-footprint` fails if capture ever creates a device again.
+
+**Why it does not just assume the hotkey worked.** The ChatGPT hotkey is a toggle, so a helper that fires and hopes will hang up on you the second time you speak. Hey Codex checks ChatGPT's Voice panel first. That check reads only which process owns an on-screen floating window, never window contents, titles, position, or size, and needs no Screen Recording permission. It is also strictly optional: until the app has actually seen a Voice panel on your Mac it assumes nothing, and if OpenAI ever restructures that panel it falls back to simply sending the hotkey.
+
 ## Build it yourself
 
 Needs macOS 14.4 or later and Swift 6.
@@ -148,10 +164,28 @@ The bundle lands in `dist/HeyCodex.app`.
 
 [Open an issue.](https://github.com/cyburke/hey-codex/issues/new/choose) The template asks for the handful of details that make a report actionable. Please skip recordings and transcripts unless you are happy for them to be public.
 
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the build steps and the handful of invariants worth not breaking, including why capture must stay input-only and why the app must never claim a Voice session started just because it posted an event.
+
+Especially useful: a **notarized build** from anyone holding an Apple Developer ID, which would remove the Gatekeeper step for everyone.
+
 ## Credit
 
-Hey Codex is a GPL-3.0 fork of **[littlemelon77/hey-claude](https://github.com/littlemelon77/hey-claude)**. The wake-word listener and audio capture pipeline are that project's work, and this would not exist without it. Hey Codex rebuilds the activation logic and interface around ChatGPT Voice.
+Hey Codex is a fork of **[littlemelon77/hey-claude](https://github.com/littlemelon77/hey-claude)**. The wake-word listener and the audio capture pipeline are that project's work, and this would not exist without it. Hey Codex rebuilds the activation logic, the setup flow, and the interface around ChatGPT Voice.
 
-Wake-word detection uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) by Xiaomi Corporation.
+Wake-word detection uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) by Xiaomi Corporation, Apache-2.0. The bundled keyword-spotting model comes from the sherpa-onnx model releases under its own upstream licence. Full third-party attribution is in [NOTICE](NOTICE).
 
-Licensed under [GPL-3.0](LICENSE). Full attribution in [NOTICE](NOTICE). Not affiliated with OpenAI.
+## Licence
+
+**[GPL-3.0](LICENSE)**, inherited from the upstream project. In practice:
+
+- You can use it, read it, modify it, and share it, commercially or not.
+- If you distribute a modified version, it has to stay GPL-3.0 and you have to make your source available.
+- There is no warranty. It presses a hotkey; if that goes wrong, that is on you.
+
+Copyright for the modifications is Eliott Burke's; copyright for the original work remains littlemelon77's. Both are recorded in [NOTICE](NOTICE).
+
+---
+
+Not affiliated with, endorsed by, or connected to OpenAI. "ChatGPT" and the ChatGPT logo are trademarks of OpenAI, used here only to identify the application this tool works with.
