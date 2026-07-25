@@ -60,4 +60,40 @@ final class AudioInputSelectionTests: XCTestCase {
                                                   available: [monitor, headset],
                                                   systemDefaultUID: "monitor"), "airpods")
     }
+
+    /// The chosen microphone has to survive a save and reload, or the picker
+    /// silently forgets every selection.
+    func test_chosenDeviceRoundTripsThroughSettings() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("heycodex-input-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = SettingsStore(fileURL: url)
+
+        var settings = Settings.default
+        settings.inputDeviceUID = "airpods-uid"
+        settings.inputDeviceName = "AirPods Pro"
+        try store.save(settings)
+
+        let loaded = SettingsStore(fileURL: url).load()
+        XCTAssertEqual(loaded.inputDeviceUID, "airpods-uid")
+        XCTAssertEqual(loaded.inputDeviceName, "AirPods Pro")
+    }
+
+    func test_clearingBackToAutomaticAlsoPersists() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("heycodex-input-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var settings = Settings.default
+        settings.inputDeviceUID = "airpods-uid"
+        settings.inputDeviceName = "AirPods Pro"
+        try SettingsStore(fileURL: url).save(settings)
+
+        settings.inputDeviceUID = nil
+        settings.inputDeviceName = nil
+        try SettingsStore(fileURL: url).save(settings)
+
+        let loaded = SettingsStore(fileURL: url).load()
+        XCTAssertNil(loaded.inputDeviceUID)
+        XCTAssertNil(loaded.inputDeviceName)
+    }
 }

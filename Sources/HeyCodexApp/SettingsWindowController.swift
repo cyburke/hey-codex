@@ -15,6 +15,10 @@ final class SettingsWindowController: NSWindowController {
     private let inputHint = NSTextField(wrappingLabelWithString: "")
     /// Menu index to device UID. Index 0 is Automatic, which has no UID.
     private var inputDeviceUIDs: [String?] = [nil]
+    /// True while the popup is being rebuilt. Rebuilding empties the menu, which
+    /// momentarily leaves index 0 (Automatic) selected, and an action delivered in
+    /// that window would save nil straight over the user's chosen microphone.
+    private var isReloadingDevices = false
     private let notice = NSTextField(labelWithString: "")
     private let phraseValue = NSTextField(labelWithString: "")
     /// Set by AppDelegate so Settings opens the same enrollment window the menu
@@ -151,6 +155,8 @@ final class SettingsWindowController: NSWindowController {
 
     /// Rebuilt every time the window opens, because microphones come and go.
     private func reloadInputDevices() {
+        isReloadingDevices = true
+        defer { isReloadingDevices = false }
         let devices = controller.availableInputDevices
         inputDevice.removeAllItems()
         inputDeviceUIDs = [nil]
@@ -187,10 +193,15 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func saveInputDevice() {
+        guard !isReloadingDevices else { return }
         let index = inputDevice.indexOfSelectedItem
         guard index >= 0, index < inputDeviceUIDs.count else { return }
+        let uid = inputDeviceUIDs[index]
+        // Nothing to do, and worth checking: a spurious action during a rebuild
+        // would otherwise clear a saved choice by "selecting" Automatic.
+        guard uid != controller.settings.inputDeviceUID else { return }
         do {
-            try controller.selectInputDevice(uid: inputDeviceUIDs[index])
+            try controller.selectInputDevice(uid: uid)
             notice.textColor = .systemGreen
             notice.stringValue = "Saved. Listening restarted on \(controller.activeInputName ?? "the new microphone")."
             reloadInputDevices()
