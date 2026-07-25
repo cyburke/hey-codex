@@ -55,7 +55,7 @@ Launch Hey Codex and a setup window walks you through it in three steps. It take
 2. **Two permissions**, both on one page, each ticking green as you grant it. **Microphone** so it can hear the phrase, **Accessibility** so it can press the hotkey. After Accessibility the app restarts itself, because macOS only hands a fresh permission to a fresh process. The window comes back on its own.
 3. **One test**, which confirms the hotkey in ChatGPT actually matches. Then you are done.
 
-The one thing to do yourself: in **ChatGPT → Settings → Voice**, make sure the **Voice chat hotkey** is `⌃⌥V`. Any chord works as long as both apps agree, and step 3 tells you if they do not.
+The only thing to know: Hey Codex presses ChatGPT's **Voice chat hotkey**, so it needs to know which one that is. Step 3 asks you, and defaults to `⌃⌥V`. Already using a different chord? Type that one instead. Nothing in ChatGPT needs changing.
 
 Everything after this lives in the menu bar icon. Click it to change your phrase, adjust sensitivity, or reopen this window from **Setup & Diagnostics**, which is also the quickest way to spot a permission that got switched off later.
 

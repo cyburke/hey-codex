@@ -41,6 +41,15 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                                       reason: "So it can press the ChatGPT Voice hotkey on your behalf. That is all it does with this.")
     private let permissionsStack = NSStackView()
 
+    /// The hotkey editor lives on the test page. Telling people to change
+    /// ChatGPT to suit us is backwards: plenty already have a Voice hotkey they
+    /// like, and Hey Codex is the side that should adapt.
+    private let hotkeyStack = NSStackView()
+    private let control = NSButton(checkboxWithTitle: "Control", target: nil, action: nil)
+    private let option = NSButton(checkboxWithTitle: "Option", target: nil, action: nil)
+    private let command = NSButton(checkboxWithTitle: "Command", target: nil, action: nil)
+    private let keyField = NSTextField(string: "V")
+
     /// The page a fresh window should open on. Reopening a finished setup from
     /// the menu must not march the user through the welcome text again.
     static func startingPage(for controller: AppController) -> Page {
@@ -106,6 +115,18 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         axRow.onAction = { [weak self] in self?.grantAccessibility() }
         root.addArrangedSubview(permissionsStack)
 
+        let keyLabel = NSTextField(labelWithString: "Key")
+        keyLabel.font = .systemFont(ofSize: 13)
+        keyField.alignment = .center
+        keyField.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        hotkeyStack.orientation = .horizontal
+        hotkeyStack.spacing = 10
+        hotkeyStack.alignment = .centerY
+        for view in [control, option, command, keyLabel, keyField] {
+            hotkeyStack.addArrangedSubview(view)
+        }
+        root.addArrangedSubview(hotkeyStack)
+
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = .labelColor
         detail.preferredMaxLayoutWidth = 490
@@ -149,6 +170,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             Two permissions, about a minute, and you are done.
             """
         permissionsStack.isHidden = true
+        hotkeyStack.isHidden = true
         detail.stringValue = ""
         primary.title = "Let's Go"
         primary.target = self
@@ -169,6 +191,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             ticks along with you, so there is nothing to come back and confirm.
             """
         permissionsStack.isHidden = false
+        hotkeyStack.isHidden = true
         refreshPermissionRows()
         detail.stringValue = "Heads up: after you allow Accessibility, Hey Codex restarts itself. macOS only hands a new permission to a freshly started app, so this is normal and the window will pop right back."
         primary.title = "Continue"
@@ -185,13 +208,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func renderTest() {
         progressLabel.stringValue = "STEP 3 OF 3"
-        heading.stringValue = "Let's make sure it works"
+        heading.stringValue = "Match the Voice hotkey"
         permissionsStack.isHidden = true
         if !controller.isChatGPTInstalled {
             body.stringValue = """
                 Hey Codex works by pressing a hotkey inside the ChatGPT desktop app, and it \
                 is not installed on this Mac yet. Grab it first and then come back here.
                 """
+            hotkeyStack.isHidden = true
             detail.stringValue = ""
             primary.title = "Get ChatGPT for Mac"
             primary.target = self
@@ -204,21 +228,20 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         body.stringValue = """
-            One test and you are done. Hey Codex presses the same hotkey you would, so both \
-            apps need to agree on which one it is.
+            Last thing: Hey Codex needs to know which hotkey opens Voice in ChatGPT, because \
+            that is the key it presses for you.
 
-            1.  In ChatGPT, open Settings, then Voice
-            2.  Set the Voice chat hotkey to \(controller.settings.voiceShortcut.displayString)
-            3.  Press the button below and watch for Voice
-
-            Not running ChatGPT right now? No problem, this will start it for you.
+            Check ChatGPT under Settings, then Voice. If it already shows a Voice chat hotkey, \
+            set the same one below. If it is empty, set it to anything and match it here.
             """
+        hotkeyStack.isHidden = false
+        loadHotkeyFields()
         detail.stringValue = """
-            ✨  “Hey Codex” not your style? You can use absolutely any phrase you like. \
-            “Hey Jarvis”, “Hey Computer”, your dog's name, whatever makes you smile. Pick \
-            Use My Own Wake Phrase from the menu bar, say it three times, and it is yours.
+            ✨  “Hey Codex” not your style? Use absolutely any phrase you like. “Hey Jarvis”, \
+            “Hey Computer”, your dog's name, whatever makes you smile. Pick Use My Own Wake \
+            Phrase from the menu bar, say it three times, and it is yours.
             """
-        primary.title = "Test ChatGPT Voice"
+        primary.title = "Save and Test"
         primary.target = self
         primary.action = #selector(runTest)
         primary.keyEquivalent = "\r"
@@ -304,7 +327,27 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         NSWorkspace.shared.open(URL(string: "https://openai.com/chatgpt/download/")!)
     }
 
+    private func loadHotkeyFields() {
+        let shortcut = controller.settings.voiceShortcut
+        control.state = shortcut.control ? .on : .off
+        option.state = shortcut.option ? .on : .off
+        command.state = shortcut.command ? .on : .off
+        keyField.stringValue = shortcut.key.uppercased()
+    }
+
     @objc private func runTest() {
+        // Save what is on screen first, so the test always exercises the hotkey
+        // the user just told us about rather than a stale one.
+        do {
+            try controller.updateShortcut(key: keyField.stringValue,
+                                         control: control.state == .on,
+                                         option: option.state == .on,
+                                         command: command.state == .on)
+        } catch {
+            heading.stringValue = "That hotkey will not work"
+            body.stringValue = error.localizedDescription
+            return
+        }
         primary.isEnabled = false
         primary.title = controller.isChatGPTRunning ? "Testing…" : "Starting ChatGPT…"
         controller.testVoiceShortcut { [weak self] result in
@@ -323,8 +366,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                     ✨  Change your phrase, adjust sensitivity, or run this test again from there
                     🙌  That is everything. Go talk to it.
                     """
-                self.detail.stringValue = "Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString). Change it there to match, and test again."
+                self.detail.stringValue = "Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString) after all. Check it in ChatGPT, correct it above, and test again."
                 self.primary.title = "Test Again"
+                self.hotkeyStack.isHidden = false
                 self.secondary.title = "Done"
                 self.secondary.keyEquivalent = "\r"
             case .failure(let error):
