@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Report an Issue…", #selector(reportIssue)))
         menu.addItem(item("About Hey Codex", #selector(showAbout)))
         menu.addItem(.separator())
-        let privacy = NSMenuItem(title: "All listening stays on this Mac", action: nil, keyEquivalent: "")
+        let privacy = NSMenuItem(title: "Everything you say stays on this Mac", action: nil, keyEquivalent: "")
         privacy.isEnabled = false
         menu.addItem(privacy)
         menu.addItem(item("Quit Hey Codex", #selector(quit)))
@@ -102,18 +102,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// closes the instant the user clicks anything, which is exactly when they
     /// leave for System Settings.
     private func buildSetupMenu(_ state: SetupState) {
-        addHeading("Hey Codex is not set up yet")
+        addHeading("Finish setting up Hey Codex")
         menu.addItem(action("Open Setup…", #selector(openSetup)))
         switch state {
-        case .needsMicrophone:            addNote("Next: allow the microphone.")
-        case .microphoneBlocked:          addNote("Microphone access is switched off.")
-        case .needsAccessibility:         addNote("Next: allow Accessibility.")
-        case .accessibilityPendingRelaunch: addNote("Restarting to pick up the permission…")
-        case .ready:                      addNote("Run the test to finish.")
+        case .needsMicrophone:            addNote("Next up: the microphone.")
+        case .microphoneBlocked:          addNote("Microphone access is switched off right now.")
+        case .needsAccessibility:         addNote("Next up: Accessibility.")
+        case .accessibilityPendingRelaunch: addNote("Restarting to pick up that permission…")
+        case .ready:                      addNote("Just the test left.")
         }
         if !controller.isChatGPTInstalled {
             menu.addItem(.separator())
-            addNote("The ChatGPT desktop app was not found.")
+            addNote("The ChatGPT desktop app is not installed.")
             menu.addItem(item("Get ChatGPT for Mac…", #selector(openChatGPTDownload)))
         }
     }
@@ -135,12 +135,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !controller.isArmed {
             menu.addItem(item("End Voice Session", #selector(endVoiceSession)))
             if !controller.isVoiceStateVerified {
-                menu.addItem(item("Voice Already Closed — Reset", #selector(rearmVoice)))
+                menu.addItem(item("Voice Already Closed, Reset", #selector(rearmVoice)))
             }
             menu.addItem(.separator())
         }
         if !controller.isChatGPTInstalled {
-            addNote("The ChatGPT desktop app was not found.")
+            addNote("The ChatGPT desktop app is not installed.")
             menu.addItem(item("Get ChatGPT for Mac…", #selector(openChatGPTDownload)))
             menu.addItem(.separator())
         }
@@ -149,8 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // app's first ever attempt, with nothing proven and no way to see that
         // the shortcut went nowhere.
         if !controller.isVoiceStateVerified {
-            menu.addItem(action("Try It: Test ChatGPT Voice", #selector(testVoiceShortcut)))
-            addNote("Confirms the hotkey matches before you rely on the phrase.")
+            menu.addItem(action("Try It Now: Test ChatGPT Voice", #selector(testVoiceShortcut)))
+            addNote("Worth doing once, so you know the hotkey lines up.")
         } else {
             menu.addItem(item("Test ChatGPT Voice Shortcut", #selector(testVoiceShortcut)))
         }
@@ -326,17 +326,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = "Hey Codex \(version)"
         alert.informativeText = """
-            A local wake-word helper for ChatGPT desktop Voice.
+            Say a phrase, ChatGPT Voice opens. That is the whole idea.
 
-            Nothing is recorded and nothing leaves this Mac. Hey Codex listens \
-            for one phrase and sends the same keyboard shortcut you configured \
-            in ChatGPT.
+            Hey Codex listens on this Mac for one phrase and nothing else, then \
+            presses the same Voice hotkey you set up in ChatGPT. No recording, \
+            no uploads, no account.
 
-            The only network request it makes is a daily check with GitHub for \
-            a newer release, which you can turn off in Settings. It never \
-            installs anything on its own.
+            Once a day it asks GitHub whether there is a newer version, which \
+            you can switch off in Settings. It never installs anything by itself.
 
-            GPL-3.0. A fork of littlemelon77/hey-claude.
+            Free and open source under GPL-3.0, built on the excellent \
+            littlemelon77/hey-claude.
             """
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "View on GitHub")

@@ -36,9 +36,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     /// Permission rows, built once and updated in place so the ticks can change
     /// while the user is looking at them.
     private let micRow = PermissionRow(title: "Microphone",
-                                       reason: "So it can hear your wake phrase. Audio never leaves this Mac.")
+                                       reason: "So it can hear your phrase. Audio is processed here and never leaves your Mac.")
     private let axRow = PermissionRow(title: "Accessibility",
-                                      reason: "So it can press the ChatGPT Voice hotkey for you.")
+                                      reason: "So it can press the ChatGPT Voice hotkey on your behalf. That is all it does with this.")
     private let permissionsStack = NSStackView()
 
     /// The page a fresh window should open on. Reopening a finished setup from
@@ -137,7 +137,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func renderWelcome() {
         progressLabel.stringValue = "STEP 1 OF 3"
-        heading.stringValue = "Hey Codex"
+        heading.stringValue = "Welcome to Hey Codex"
         body.stringValue = """
             Say it. Voice opens. That is the whole tool.
 
@@ -150,12 +150,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             """
         permissionsStack.isHidden = true
         detail.stringValue = ""
-        primary.title = "Get Started"
+        primary.title = "Let's Go"
         primary.target = self
         primary.action = #selector(goToPermissions)
         primary.keyEquivalent = "\r"
         primary.isHidden = false
-        secondary.title = "Not Now"
+        secondary.title = "Later"
         secondary.target = self
         secondary.action = #selector(closeSetup)
         secondary.isHidden = false
@@ -163,11 +163,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func renderPermissions() {
         progressLabel.stringValue = "STEP 2 OF 3"
-        heading.stringValue = "Two permissions"
-        body.stringValue = "macOS asks for each one separately. This page updates itself as you grant them."
+        heading.stringValue = "Two quick permissions"
+        body.stringValue = """
+            macOS will ask about each one separately. Grant them below and this page \
+            ticks along with you, so there is nothing to come back and confirm.
+            """
         permissionsStack.isHidden = false
         refreshPermissionRows()
-        detail.stringValue = "After you allow Accessibility, Hey Codex restarts itself so macOS hands over the permission. That is expected, and this window comes back."
+        detail.stringValue = "Heads up: after you allow Accessibility, Hey Codex restarts itself. macOS only hands a new permission to a freshly started app, so this is normal and the window will pop right back."
         primary.title = "Continue"
         primary.target = self
         primary.action = #selector(goToTest)
@@ -182,10 +185,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     private func renderTest() {
         progressLabel.stringValue = "STEP 3 OF 3"
-        heading.stringValue = "Check it works"
+        heading.stringValue = "Let's make sure it works"
         permissionsStack.isHidden = true
         if !controller.isChatGPTInstalled {
-            body.stringValue = "The ChatGPT desktop app is not installed. Hey Codex presses a hotkey inside it, so it needs to be there first."
+            body.stringValue = """
+                Hey Codex works by pressing a hotkey inside the ChatGPT desktop app, and it \
+                is not installed on this Mac yet. Grab it first and then come back here.
+                """
             detail.stringValue = ""
             primary.title = "Get ChatGPT for Mac"
             primary.target = self
@@ -198,15 +204,20 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         body.stringValue = """
-            One quick check and you are finished.
+            One test and you are done. Hey Codex presses the same hotkey you would, so both \
+            apps need to agree on which one it is.
 
-            1.  In ChatGPT, open Settings then Voice
+            1.  In ChatGPT, open Settings, then Voice
             2.  Set the Voice chat hotkey to \(controller.settings.voiceShortcut.displayString)
-            3.  Press the button below
+            3.  Press the button below and watch for Voice
 
-            Hey Codex presses exactly that hotkey, so the two have to match.
+            Not running ChatGPT right now? No problem, this will start it for you.
             """
-        detail.stringValue = "✨  Not a fan of “Hey Codex”? Pick Use My Own Wake Phrase from the menu bar, say “Hey Jarvis” three times, and that becomes your phrase."
+        detail.stringValue = """
+            ✨  “Hey Codex” not your style? You can use absolutely any phrase you like. \
+            “Hey Jarvis”, “Hey Computer”, your dog's name, whatever makes you smile. Pick \
+            Use My Own Wake Phrase from the menu bar, say it three times, and it is yours.
+            """
         primary.title = "Test ChatGPT Voice"
         primary.target = self
         primary.action = #selector(runTest)
@@ -303,20 +314,21 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             self.window?.makeKeyAndOrderFront(nil)
             switch result {
             case .success:
-                self.heading.stringValue = "You are all set"
+                self.heading.stringValue = "You're all set 🎉"
                 self.body.stringValue = """
-                    Voice should have just opened. Try it for real: say \
-                    “\(self.controller.settings.wakePhrase)” from any app.
+                    ChatGPT Voice should have just opened. Now try it the real way: say \
+                    “\(self.controller.settings.wakePhrase)” out loud from any app at all.
 
-                    🔍  Everything lives in the menu bar icon from now on
-                    ✨  Change the phrase, tune sensitivity, or re-test from there
+                    🔍  Look for the small icon in your menu bar, that is home now
+                    ✨  Change your phrase, adjust sensitivity, or run this test again from there
+                    🙌  That is everything. Go talk to it.
                     """
-                self.detail.stringValue = "Nothing opened? The hotkey in ChatGPT does not match \(self.controller.settings.voiceShortcut.displayString). Fix it there and test again."
+                self.detail.stringValue = "Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString). Change it there to match, and test again."
                 self.primary.title = "Test Again"
                 self.secondary.title = "Done"
                 self.secondary.keyEquivalent = "\r"
             case .failure(let error):
-                self.heading.stringValue = "That test could not run"
+                self.heading.stringValue = "That did not go through"
                 self.body.stringValue = error.localizedDescription
                 self.primary.title = "Try Again"
             }

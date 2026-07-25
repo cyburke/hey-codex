@@ -57,7 +57,7 @@ Launch Hey Codex and a setup window walks you through it in three steps. It take
 
 The one thing to do yourself: in **ChatGPT → Settings → Voice**, make sure the **Voice chat hotkey** is `⌃⌥V`. Any chord works as long as both apps agree, and step 3 tells you if they do not.
 
-If setup is unfinished, your menu bar says so in orange, so an install that stalled is never silent. You can reopen the window any time from **Setup & Diagnostics** in the menu, which is also the fastest way to see whether a permission got revoked later.
+Everything after this lives in the menu bar icon. Click it to change your phrase, adjust sensitivity, or reopen this window from **Setup & Diagnostics**, which is also the quickest way to spot a permission that got switched off later.
 
 To end a Voice session, close it in ChatGPT however you normally would. Hey Codex notices and starts listening again by itself. There is no second phrase to memorize.
 
@@ -77,13 +77,15 @@ Hey Codex checks whether ChatGPT's Voice panel is actually on screen before it d
 
 While a Voice session is open it stops listening entirely, so your conversation cannot set it off.
 
-## Use your own wake phrase
+## Use any phrase you like
 
-"Hey Codex" is the default. For anything else, pick **Use My Own Wake Phrase** from the menu, type a phrase, and say it three times.
+"Hey Codex" is just the default. Pick **Use My Own Wake Phrase** from the menu, type whatever you want, and say it three times.
 
-Those recordings never leave your Mac. They exist to build the keyword from how the speech model hears *your* voice, then the detector is tuned until all three of your takes fire. That is why it beats picking from a list. A keyword guessed from spelling matches a generic speaker, not you.
+Genuinely anything. "Hey Jarvis" if you have always wanted to. "Hey Computer" if you grew up on Star Trek. Your dog's name. Whatever makes you smile when it works.
 
-Longer phrases are better. Single words go off by accident. Switching back to "Hey Codex" is one button.
+Those three recordings never leave your Mac. They are there so the keyword can be built from how the speech model actually hears *your* voice, then the detector is tuned until all three of your takes fire. That is why recording beats picking from a list: a keyword guessed from spelling matches a generic speaker, not you.
+
+Two or three words works best, since single words tend to go off when you did not mean them. Changing your mind is one button.
 
 ## Privacy
 

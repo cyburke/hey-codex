@@ -21,11 +21,11 @@ final class AppController {
 
         var menuText: String {
             switch self {
-            case .stopped: return "Listening is off"
-            case .starting: return "Starting local listener…"
-            case .listening: return "Listening locally"
-            case .activating: return "Sending Voice shortcut…"
-            case .latched: return "Voice active - close it in ChatGPT when finished"
+            case .stopped: return "Not listening right now"
+            case .starting: return "Warming up…"
+            case .listening: return "Listening"
+            case .activating: return "Opening ChatGPT Voice…"
+            case .latched: return "Voice is open. Close it in ChatGPT when you are done"
             case .failed(let message): return message
             }
         }
@@ -190,7 +190,7 @@ final class AppController {
     func startListening() {
         guard audio == nil else { return }
         guard let modelsDirectory else {
-            status = .failed("Models are missing. Rebuild the app with the models installed.")
+            status = .failed("The speech model is missing from this build. Reinstalling Hey Codex should fix it.")
             return
         }
         status = .starting
@@ -222,7 +222,7 @@ final class AppController {
             status = activation.isArmed ? .listening : .latched
         } catch {
             stopPipeline()
-            status = .failed("Could not start local listening: \(error.localizedDescription)")
+            status = .failed("Could not start listening: \(error.localizedDescription)")
         }
     }
 
@@ -246,7 +246,7 @@ final class AppController {
         if refreshVoiceShortcutPermission() { return true }
         let granted = CGRequestPostEventAccess()
         if granted || refreshVoiceShortcutPermission() { return true }
-        status = .failed("Allow Hey Codex to send keyboard shortcuts in Accessibility, then choose Test ChatGPT Voice Shortcut.")
+        status = .failed("Allow Hey Codex under Accessibility, then run the test again.")
         return false
     }
 
@@ -274,7 +274,7 @@ final class AppController {
         activation.rearm()
         rearmWakeEngine()
         guard activation.beginLaunch() else {
-            completion(.failure(.shellFailed("Could not start a test just now. Try again in a moment.")))
+            completion(.failure(.shellFailed("Could not start a test just now. Give it a second and try again.")))
             return
         }
         guard isChatGPTRunning else {
@@ -283,8 +283,8 @@ final class AppController {
             ensureChatGPTRunning { [weak self] started in
                 guard let self else { return }
                 guard started else {
-                    self.status = .failed("ChatGPT is not running and could not be started.")
-                    completion(.failure(.shellFailed("ChatGPT is not running. Open it and try again.")))
+                    self.status = .failed("ChatGPT would not start. Try opening it yourself, then test again.")
+                    completion(.failure(.shellFailed("ChatGPT is not running, and Hey Codex could not start it. Open it yourself and try again.")))
                     return
                 }
                 self.testVoiceShortcut(completion: completion)
@@ -348,10 +348,10 @@ final class AppController {
 
     func updateShortcut(key: String, control: Bool, option: Bool, command: Bool) throws {
         guard let normalized = VoiceShortcut.normalizedKey(key) else {
-            throw ValidationError("Use one supported printable key, such as ;, /, or V.")
+            throw ValidationError("Pick one printable key, like V, ; or /.")
         }
         let shortcut = VoiceShortcut(key: normalized, control: control, option: option, command: command)
-        guard shortcut.isUsable else { throw ValidationError("Choose at least one modifier and a supported key.") }
+        guard shortcut.isUsable else { throw ValidationError("A hotkey needs at least one modifier plus a key.") }
         var updated = settings
         updated.voiceShortcut = shortcut
         try SettingsStore().save(updated)
@@ -364,7 +364,7 @@ final class AppController {
     /// into a wake phrase.
     func updateWakeSensitivity(threshold: Float) throws {
         guard (0.08...0.30).contains(threshold) else {
-            throw ValidationError("Wake sensitivity must stay within the supported range.")
+            throw ValidationError("That sensitivity is outside the supported range.")
         }
         var updated = settings
         updated.wakeKeywordsThreshold = threshold
@@ -384,10 +384,10 @@ final class AppController {
     /// is not necessarily detectable at the default threshold.
     func completeEnrollment(phrase: String, keywordLines: [String], threshold: Float) throws {
         guard let normalized = WakePhrase.normalize(phrase) else {
-            throw ValidationError("Enter a wake phrase of a few plain words.")
+            throw ValidationError("Type a wake phrase of a few plain words.")
         }
         guard !keywordLines.isEmpty else {
-            throw ValidationError("Enrollment produced no usable keyword.")
+            throw ValidationError("Those recordings did not produce anything usable. Try recording again.")
         }
         try keywords.save(lines: keywordLines)
         var updated = settings
@@ -489,7 +489,7 @@ final class AppController {
                 guard started else {
                     self.activation.completeLaunch(success: false)
                     self.rearmWakeEngine()
-                    self.status = .failed("ChatGPT is not running and could not be started.")
+                    self.status = .failed("ChatGPT would not start. Try opening it yourself, then test again.")
                     return
                 }
                 self.postAndConfirmLaunch()
@@ -544,7 +544,7 @@ final class AppController {
         if isChatGPTRunning {
             activation.completeLaunch(success: false)
             rearmWakeEngine()
-            status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) is the Voice chat hotkey in ChatGPT.")
+            status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) is set as the Voice chat hotkey in ChatGPT.")
             return
         }
         guard trust.isProven else {
@@ -562,7 +562,7 @@ final class AppController {
         }
         activation.completeLaunch(success: false)
         rearmWakeEngine()
-        status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) opens Voice in ChatGPT, then say Hey Codex again.")
+        status = .failed("Voice did not open. Make sure \(settings.voiceShortcut.displayString) is the Voice chat hotkey in ChatGPT, then try again.")
     }
 
     /// Polls for the panel to reach `visible`. Returns false on timeout.

@@ -66,16 +66,16 @@ public struct CommandExecutor: Sendable {
                 // A wake phrase must never surprise someone with a macOS privacy
                 // dialog, and reporting the missing capability here keeps the
                 // user on a clear, repeatable path to repair it.
-                completion(.failure(.shellFailed("Choose Enable ChatGPT Voice Shortcut in the Hey Codex menu, then try again.")))
+                completion(.failure(.shellFailed("Hey Codex needs Accessibility permission before it can press the hotkey. Open Setup from the menu bar to sort that out.")))
                 return
             }
             let shortcut = settings.voiceShortcut
             guard shortcut.isUsable, let keyCode = shortcut.virtualKeyCode else {
-                completion(.failure(.shellFailed("Choose a supported Voice shortcut key in Hey Codex settings.")))
+                completion(.failure(.shellFailed("That hotkey key is not supported. Pick another one in Hey Codex settings.")))
                 return
             }
             guard let source = CGEventSource(stateID: .hidSystemState) else {
-                completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                completion(.failure(.shellFailed("macOS would not let Hey Codex build the keystroke. Try again in a moment.")))
                 return
             }
             // Always post to the system HID tap, never to ChatGPT's pid - even
@@ -107,7 +107,7 @@ public struct CommandExecutor: Sendable {
                 guard let event = CGEvent(keyboardEventSource: source,
                                           virtualKey: modifier.keyCode,
                                           keyDown: true) else {
-                    completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                    completion(.failure(.shellFailed("macOS would not let Hey Codex build the keystroke. Try again in a moment.")))
                     return
                 }
                 event.flags = flags
@@ -117,7 +117,7 @@ public struct CommandExecutor: Sendable {
                                      virtualKey: CGKeyCode(keyCode), keyDown: true),
                   let up = CGEvent(keyboardEventSource: source,
                                    virtualKey: CGKeyCode(keyCode), keyDown: false) else {
-                completion(.failure(.shellFailed("Could not create the global ChatGPT Voice shortcut event.")))
+                completion(.failure(.shellFailed("macOS would not let Hey Codex build the keystroke. Try again in a moment.")))
                 return
             }
             down.flags = flags
@@ -129,7 +129,7 @@ public struct CommandExecutor: Sendable {
                 guard let event = CGEvent(keyboardEventSource: source,
                                           virtualKey: modifier.keyCode,
                                           keyDown: false) else {
-                    completion(.failure(.shellFailed("Could not release the global ChatGPT Voice shortcut event.")))
+                    completion(.failure(.shellFailed("macOS would not let Hey Codex finish the keystroke. Try again in a moment.")))
                     return
                 }
                 event.flags = flags

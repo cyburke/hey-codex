@@ -50,7 +50,7 @@ final class SettingsWindowController: NSWindowController {
         window.contentView = root
 
         // Wake phrase ------------------------------------------------------
-        root.addArrangedSubview(sectionHeader("Wake phrase"))
+        root.addArrangedSubview(sectionHeader("Your wake phrase"))
         phraseValue.font = .systemFont(ofSize: 15, weight: .medium)
         let phraseRow = NSStackView(views: [phraseValue,
                                             NSButton(title: "Change…", target: self,
@@ -58,13 +58,13 @@ final class SettingsWindowController: NSWindowController {
         phraseRow.orientation = .horizontal
         phraseRow.spacing = 12
         root.addArrangedSubview(phraseRow)
-        root.addArrangedSubview(hint("Recorded in your own voice. “Hey ChatGPT” and “Hey Jarvis” are offered as suggestions."))
+        root.addArrangedSubview(hint("Use anything you like. “Hey Jarvis”, “Hey Computer”, or something only you would say. Two or three words works best."))
 
         root.addArrangedSubview(rule())
 
         // Shortcut ---------------------------------------------------------
         root.addArrangedSubview(sectionHeader("ChatGPT Voice hotkey"))
-        root.addArrangedSubview(body("Hey Codex presses this hotkey for you, so it must match the Voice chat hotkey in ChatGPT exactly."))
+        root.addArrangedSubview(body("Hey Codex presses this for you, so it has to match the Voice chat hotkey set in ChatGPT. Change it in both places or neither."))
         // Modifiers and the key live on separate rows. Inline, the "Command"
         // checkbox sat flush against the "Key" field label and the row read as
         // "Command Key" - a misparse this window can least afford.
@@ -94,7 +94,7 @@ final class SettingsWindowController: NSWindowController {
         sensitivity.target = self
         sensitivity.action = #selector(saveSensitivity)
         root.addArrangedSubview(sensitivity)
-        root.addArrangedSubview(hint("Higher sensitivity catches a quieter voice, but wakes by accident more often."))
+        root.addArrangedSubview(hint("Higher sensitivity picks up a quieter voice, at the cost of the occasional false start. Balanced suits most people."))
 
         root.addArrangedSubview(rule())
 
@@ -103,14 +103,14 @@ final class SettingsWindowController: NSWindowController {
         autoUpdates.target = self
         autoUpdates.action = #selector(saveAutoUpdates)
         root.addArrangedSubview(autoUpdates)
-        root.addArrangedSubview(hint("Asks GitHub once a day whether a newer release exists. This is the only network request Hey Codex makes. Turn it off and it makes none."))
+        root.addArrangedSubview(hint("Once a day, Hey Codex asks GitHub whether there is a newer version. That is the only network request it ever makes, and switching this off means it makes none at all."))
 
         root.addArrangedSubview(rule())
 
         // Privacy ----------------------------------------------------------
         root.addArrangedSubview(sectionHeader("Privacy"))
-        root.addArrangedSubview(body("Listening and wake-word processing happen entirely on this Mac. No audio is recorded, stored, or sent anywhere."))
-        root.addArrangedSubview(hint("Uses Microphone to hear the phrase and Accessibility to press the hotkey. Nothing else."))
+        root.addArrangedSubview(body("Everything you say is processed here on your Mac. Nothing is recorded, nothing is stored, and nothing is sent anywhere."))
+        root.addArrangedSubview(hint("It uses the microphone to hear your phrase and Accessibility to press the hotkey. That is the whole list."))
 
         notice.font = .systemFont(ofSize: 12, weight: .medium)
         notice.maximumNumberOfLines = 0
@@ -136,8 +136,8 @@ final class SettingsWindowController: NSWindowController {
             try controller.setAutomaticUpdateChecks(autoUpdates.state == .on)
             notice.textColor = .systemGreen
             notice.stringValue = autoUpdates.state == .on
-                ? "Hey Codex will check GitHub for new releases once a day."
-                : "Update checks are off. Hey Codex will make no network requests."
+                ? "Saved. Hey Codex will check for new versions once a day."
+                : "Saved. Update checks are off, so Hey Codex will not touch the network at all."
         } catch { show(error.localizedDescription) }
     }
 
@@ -168,7 +168,7 @@ final class SettingsWindowController: NSWindowController {
                                           option: option.state == .on,
                                           command: command.state == .on)
             notice.textColor = .systemGreen
-            notice.stringValue = "Saved. Configure the same chord in ChatGPT desktop Voice settings."
+            notice.stringValue = "Saved. Remember to set the same combination in ChatGPT under Settings, then Voice."
         } catch { show(error.localizedDescription) }
     }
 
