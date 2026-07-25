@@ -68,8 +68,8 @@ public final class WakeWordEngine {
         // itself here and modeling_unit/bpe_vocab make no difference to what
         // fires: measured by feeding the model's own reference audio and three
         // real enrollment takes through both settings across the full threshold
-        // sweep and diffing the results, identical in every case.
-        // P1.4). Left at the library's "cjkchar" default; a `bpe.model` file is
+        // sweep and diffing the results, identical in every case. Left at the
+        // library's "cjkchar" default; a `bpe.model` file is
         // deliberately not shipped (see scripts/bundle-app.sh) so this also matches
         // what every built app actually runs.
         if ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" {

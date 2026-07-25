@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
+
+Setup and audio, both rebuilt after a full walkthrough on a clean machine found
+real defects in each.
 
 ### Fixed
 
@@ -15,28 +18,6 @@
 - **Wake word fires with less delay.** A measured tuning pass found the
   keyword score and trailing-blank settings had been over-corrected; lowering
   both keeps the same zero-false-alarm result with less latency.
-
-### Added
-
-- **A custom phrase that does not fire tries alternatives automatically.**
-  If the exact spelling never fires cleanly against your recordings, Hey
-  Codex tries a couple of related spellings, such as the phrase with a
-  leading "hey" dropped, before giving up. It tells you when it has armed
-  something other than what you typed.
-
-### Changed
-
-- Enrollment diagnostics (a log of tokens, timings, and per-threshold
-  results) remain off by default. Nothing is written unless a marker file is
-  created by hand; there is still no UI path to it.
-
-## 0.1.2
-
-Setup and audio, both rebuilt after a full walkthrough on a clean machine found
-real defects in each.
-
-### Fixed
-
 - **Capture no longer disturbs your audio output.** On some hardware, listening for
   a wake word could activate the speakers. Capture now touches the microphone and
   nothing else, guarded by a test.
@@ -54,6 +35,11 @@ real defects in each.
 
 ### Added
 
+- **A custom phrase that does not fire tries alternatives automatically.**
+  If the exact spelling never fires cleanly against your recordings, Hey
+  Codex tries a couple of related spellings, such as the phrase with a
+  leading "hey" dropped, before giving up. It tells you when it has armed
+  something other than what you typed.
 - **Microphone selection.** Settings lists every connected input, with Automatic
   following whatever the Mac is set to. Automatic watches
   `kAudioHardwarePropertyDefaultInputDevice`, since connect and disconnect
@@ -76,6 +62,9 @@ real defects in each.
 
 ### Changed
 
+- Enrollment diagnostics (a log of tokens, timings, and per-threshold
+  results) remain off by default. Nothing is written unless a marker file is
+  created by hand; there is still no UI path to it.
 - **Homebrew is the install path.** The cask clears the quarantine flag, so the
   app opens with no security prompt. Downloading the zip by hand still works but
   is no longer documented as a route, since macOS blocks it until the user
