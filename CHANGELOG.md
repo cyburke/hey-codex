@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6
+
+### Changed
+
+- The setup page's permission guidance is short bullets instead of a paragraph,
+  and it says why macOS is behaving oddly rather than only what to click. The
+  Accessibility step in particular shows no dialog, which reads as nothing
+  happening, so the page now says so.
+
 ## 0.1.5
 
 Permissions now survive updates, and setup says which one is blocking it.

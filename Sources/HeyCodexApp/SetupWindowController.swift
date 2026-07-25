@@ -323,28 +323,39 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     /// that match what is on screen. A disabled Continue button with no
     /// explanation is how a first-time user ends up fighting the wrong
     /// permission for an hour.
+    /// Short lines, and the reason. A paragraph of explanation on a page where
+    /// someone is stuck reads as noise; they need to know which permission, what
+    /// to click, and why macOS is behaving oddly.
     private func permissionsGuidance() -> String {
         switch controller.setupState {
         case .needsMicrophone:
-            return "Microphone is what's blocking Continue right now. Click Allow next to Microphone above - Accessibility comes after."
+            return """
+                Microphone is blocking Continue.
+                • Click Allow next to Microphone.
+                • Accessibility comes after.
+                """
         case .microphoneBlocked:
-            return "Microphone is what's blocking Continue: it is currently switched off. Click Open Settings next to Microphone above, turn it back on, then come back here."
+            return """
+                Microphone is switched off, which blocks Continue.
+                • Click Open Settings next to Microphone.
+                • Turn Microphone on, then come back.
+                """
         case .needsAccessibility, .accessibilityPendingRelaunch:
             if controller.accessibilityGrantIsStale {
                 return """
-                    Accessibility is what's blocking Continue. Hey Codex may already show as \
-                    allowed under Privacy & Security, Accessibility, but macOS is not applying \
-                    that to this build - that happens whenever the app gets replaced, including by \
-                    an update. Open that pane, and if Hey Codex is listed, turn it off and remove \
-                    it with the minus button. Then come back and click Allow again here.
+                    Accessibility is blocking Continue, and macOS is ignoring the switch.
+                    • Why: replacing the app, including by an update, makes macOS treat it as                     a new app. The old entry stays visible but no longer counts.
+                    • Open Privacy & Security, Accessibility.
+                    • Select Hey Codex, remove it with the minus button.
+                    • Come back and click Allow.
                     """
             }
             return """
-                Accessibility is what's blocking Continue. Click Allow next to Accessibility above. \
-                Unlike Microphone, macOS will not pop up a dialog for this one - it adds Hey Codex to \
-                Privacy & Security, Accessibility instead, switched off. Open that pane and turn the \
-                switch on: that is the step that actually grants it. As soon as it is on, this window \
-                relaunches itself automatically.
+                Accessibility is blocking Continue.
+                • Click Allow next to Accessibility.
+                • Why nothing seems to happen: macOS shows no dialog for this one. It adds                 Hey Codex to Privacy & Security, Accessibility, switched off.
+                • Turn that switch on. That is the actual permission.
+                • This window restarts itself once it is on.
                 """
         case .ready:
             return ""
