@@ -219,6 +219,19 @@ final class AppController {
     /// Relaunch so a freshly granted Accessibility permission takes effect. The
     /// replacement is started before this instance exits so the menu bar icon
     /// does not disappear on the user mid-setup.
+    /// True in the instance an automatic post-grant relaunch started. If the
+    /// Accessibility state has still not cleared in that instance, relaunching
+    /// again cannot help.
+    var didRelaunchAfterAccessibilityGrant: Bool {
+        CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
+    }
+
+    /// The grant is recorded but does not apply to this build. See AccessibilityGrant.
+    var accessibilityGrantIsStale: Bool {
+        AccessibilityGrant.isStale(state: setupState,
+                                  alreadyRelaunched: didRelaunchAfterAccessibilityGrant)
+    }
+
     func relaunch(reason: String? = nil) {
         // Release the microphone BEFORE the replacement launches. Starting the
         // new instance first left two processes holding the same input device at

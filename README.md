@@ -35,7 +35,7 @@ The hotkey it presses is ChatGPT's own Voice shortcut, `⌃⌥V` by default, and
 
 Everything else lives in the menu bar icon: change your phrase, adjust sensitivity, or reopen setup from **Setup & Diagnostics**.
 
-To end a Voice session, close it in ChatGPT as usual. Hey Codex notices and starts listening again on its own. While a session is open it stops listening, so saying your phrase again does nothing.
+To end a Voice session, just tell ChatGPT Voice directly with anything like "Close this voice session" and it will do it. Hey Codex will notice and start listening again on its own. While an active Voice session is open, this tool stops listening, so your wake phrase does nothing.
 
 It uses whichever microphone your Mac is set to, and follows along if you change it in **System Settings → Sound**. Settings has a picker if you'd rather pin one device.
 

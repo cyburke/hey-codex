@@ -18,6 +18,21 @@ public enum SetupState: Equatable, Sendable {
     public var isComplete: Bool { self == .ready }
 }
 
+public enum AccessibilityGrant {
+    /// Whether the Accessibility grant on this Mac is recorded but does not apply
+    /// to the running binary.
+    ///
+    /// `AXIsProcessTrusted` sees the row in System Settings and says yes, while
+    /// the post-event gate says no, and a relaunch has already been tried without
+    /// changing that. macOS binds an Accessibility authorization to a specific
+    /// build, so replacing the app (any upgrade does) can leave a row that is
+    /// visibly switched on and no longer valid. Removing the row and granting it
+    /// again is the only fix, and nothing in the UI can infer it for the user.
+    public static func isStale(state: SetupState, alreadyRelaunched: Bool) -> Bool {
+        state == .accessibilityPendingRelaunch && alreadyRelaunched
+    }
+}
+
 public enum SetupStateResolver {
     /// Resolve the two permissions into a single step.
     ///

@@ -51,3 +51,23 @@ final class SetupStateTests: XCTestCase {
         }
     }
 }
+
+final class AccessibilityGrantTests: XCTestCase {
+    /// The trap this exists to close: a row visible and switched on in System
+    /// Settings, an app that still cannot post events, and a relaunch that has
+    /// already been spent. Before this, setup showed a green tick next to a
+    /// disabled Continue button and waited forever.
+    func test_grantIsStaleOnlyAfterARelaunchHasAlreadyBeenTried() {
+        XCTAssertTrue(AccessibilityGrant.isStale(state: .accessibilityPendingRelaunch,
+                                                 alreadyRelaunched: true))
+        XCTAssertFalse(AccessibilityGrant.isStale(state: .accessibilityPendingRelaunch,
+                                                  alreadyRelaunched: false),
+                       "the first relaunch is the normal path and must not be called stale")
+    }
+
+    func test_noOtherStateIsEverStale() {
+        for state: SetupState in [.ready, .needsAccessibility, .needsMicrophone, .microphoneBlocked] {
+            XCTAssertFalse(AccessibilityGrant.isStale(state: state, alreadyRelaunched: true))
+        }
+    }
+}

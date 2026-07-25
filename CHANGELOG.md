@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.4
+
+Setup could strand you on the permissions step with Accessibility switched on.
+
+### Fixed
+
+- **Setup no longer dead-ends when macOS has a stale Accessibility grant.** The
+  app is listed and switched on, but macOS binds that authorization to a specific
+  build, so replacing the app can leave a row that looks enabled and no longer
+  applies. Setup showed the row as granted, kept Continue disabled, and relied on
+  a single automatic relaunch that cannot fix this. It now says what happened and
+  sends you to the right pane to remove the entry and grant it again.
+- A permission row no longer reads as granted while the button it gates is
+  disabled.
+
+### Changed
+
+- The README says how to end a Voice session by asking ChatGPT Voice to close it.
+
 ## 0.1.3
 
 Setup copy, after watching a first run on a clean machine.

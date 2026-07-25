@@ -112,7 +112,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         permissionsStack.addArrangedSubview(micRow.view)
         permissionsStack.addArrangedSubview(axRow.view)
         micRow.onAction = { [weak self] in self?.grantMicrophone() }
-        axRow.onAction = { [weak self] in self?.grantAccessibility() }
+        axRow.onAction = { [weak self] in
+            guard let self else { return }
+            if self.controller.accessibilityGrantIsStale {
+                self.controller.openVoiceShortcutSettings()
+            } else {
+                self.grantAccessibility()
+            }
+        }
         root.addArrangedSubview(permissionsStack)
 
         let keyLabel = NSTextField(labelWithString: "Key")
@@ -210,7 +217,9 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         permissionsStack.isHidden = false
         hotkeyStack.isHidden = true
         refreshPermissionRows()
-        detail.stringValue = "Heads up: after you allow Accessibility, Hey Codex restarts itself. macOS only hands a new permission to a freshly started app, so this is normal and the window will pop right back."
+        detail.stringValue = controller.accessibilityGrantIsStale
+            ? "Hey Codex is listed under Accessibility, but macOS is not applying it to this version. That happens when the app is replaced by an update. Open Privacy & Security, Accessibility, select Hey Codex, remove it with the minus button, then come back and allow it again."
+            : "Heads up: after you allow Accessibility, Hey Codex restarts itself. macOS only hands a new permission to a freshly started app, so this is normal and the window will pop right back."
         primary.title = "Continue"
         primary.target = self
         primary.action = #selector(goToTest)
@@ -275,9 +284,15 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         micRow.setGranted(controller.isMicrophoneAuthorized,
                           actionTitle: controller.needsMicrophoneSettings ? "Open Settings" : "Allow")
         switch controller.setupState {
-        case .ready, .accessibilityPendingRelaunch:
+        case .ready:
             axRow.setGranted(true, actionTitle: "Allow")
+        case .accessibilityPendingRelaunch where controller.accessibilityGrantIsStale:
+            // Recorded but not valid for this build. Send them to the pane, since
+            // clicking Allow again cannot fix it.
+            axRow.setGranted(false, actionTitle: "Open Settings")
         default:
+            // Mid-grant, or not granted. Either way this is not done yet, and
+            // showing a tick next to a disabled Continue button reads as a bug.
             axRow.setGranted(false, actionTitle: "Allow")
         }
         primary.isEnabled = controller.setupState.isComplete
