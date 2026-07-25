@@ -23,6 +23,9 @@ Tests/HeyClaudeKitTests/Fixtures/*.wav
 
 # Secrets / signing material — must never be committed.
 *.p12
+*.pem
+*.key
+.heycodex-signing/
 *.mobileprovision
 .env
 .env.*
