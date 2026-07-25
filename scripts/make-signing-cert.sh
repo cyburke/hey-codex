@@ -16,7 +16,10 @@ set -euo pipefail
 
 NAME="Hey Codex Local Signing"
 OUT="$HOME/.heycodex-signing"
-PASS="${HEYCODEX_CERT_PASSWORD:-heycodex}"
+# A random password, kept in the login keychain rather than written into this
+# script or the backup. The .p12 protects a signing key; a guessable password on
+# it defeats the point of protecting the file at all.
+PASS="${HEYCODEX_CERT_PASSWORD:-$(openssl rand -base64 24 | tr -d '/+=' | head -c 28)}"
 
 if security find-identity -p codesigning 2>/dev/null | grep -q "$NAME"; then
     echo "Identity \"$NAME\" is already in the keychain. Nothing to do."
@@ -49,6 +52,10 @@ openssl pkcs12 -export -inkey key.pem -in cert.pem -out identity.p12 \
 security import identity.p12 -k "$HOME/Library/Keychains/login.keychain-db" \
     -P "$PASS" -T /usr/bin/codesign -T /usr/bin/security
 
+security add-generic-password -a "hey-codex-signing" \
+    -s "Hey Codex signing certificate (.p12)" -w "$PASS" -U
 echo "Imported \"$NAME\". Private key and certificate are in $OUT."
+echo "The .p12 password is in your login keychain. Read it back with:"
+echo "  security find-generic-password -a hey-codex-signing -w"
 echo "Back up $OUT/identity.p12. Losing it costs every user one more re-grant."
 security find-identity -p codesigning | grep "$NAME" || true
