@@ -35,13 +35,43 @@ public final class AudioCapture: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.heycodex.audiocapture")
     private let delegate: SampleDelegate
 
+    /// Every microphone the user could pick, in a form the UI can render.
+    public static func availableInputDevices() -> [AudioInputDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
+                                        mediaType: .audio,
+                                        position: .unspecified)
+            .devices
+            .filter(\.isConnected)
+            .map { AudioInputDevice(uid: $0.uniqueID, name: $0.localizedName) }
+    }
+
+    public static var systemDefaultInputUID: String? {
+        AVCaptureDevice.default(for: .audio)?.uniqueID
+    }
+
+    /// The device actually in use, so the UI can say when it fell back.
+    public let deviceUID: String
+    public let deviceName: String
+
     /// onFrame is invoked on a private serial queue with 16 kHz mono samples.
-    /// `device` defaults to the system input; being able to name one explicitly
-    /// keeps a future device picker from having to touch anything else.
-    public init(device: AVCaptureDevice? = nil, onFrame: @escaping ([Float]) -> Void) throws {
-        guard let device = device ?? AVCaptureDevice.default(for: .audio) else {
+    ///
+    /// `preferredUID` nil means follow the system default. A saved device that is
+    /// no longer plugged in falls back instead of throwing, because an app that
+    /// refuses to listen when a headset is unplugged is worse than one that
+    /// listens on another microphone and says so.
+    public init(preferredUID: String? = nil, onFrame: @escaping ([Float]) -> Void) throws {
+        let discovery = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external],
+                                                        mediaType: .audio,
+                                                        position: .unspecified)
+        guard let uid = AudioInputSelection.resolve(preferredUID: preferredUID,
+                                                   available: Self.availableInputDevices(),
+                                                   systemDefaultUID: Self.systemDefaultInputUID),
+              let device = discovery.devices.first(where: { $0.uniqueID == uid })
+        else {
             throw CaptureError.noInputDevice
         }
+        self.deviceUID = device.uniqueID
+        self.deviceName = device.localizedName
         self.delegate = SampleDelegate(onFrame: onFrame)
 
         let input = try AVCaptureDeviceInput(device: device)

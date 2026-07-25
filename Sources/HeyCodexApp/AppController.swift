@@ -53,6 +53,7 @@ final class AppController {
         let loaded = SettingsStore().load()
         settings = loaded
         trust = VoiceDetectionTrust(isProven: loaded.voicePanelDetectionProven)
+        observeDeviceChanges()
     }
 
     var isListening: Bool { audio != nil }
@@ -93,6 +94,44 @@ final class AppController {
     /// ChatGPT registers its Voice hotkey with Carbon when it launches, so a
     /// hotkey press does nothing at all while the app is not running. Nothing to
     /// post to, no error, no clue.
+    var availableInputDevices: [AudioInputDevice] { AudioCapture.availableInputDevices() }
+
+    /// The microphone actually in use, which is not always the one chosen: a
+    /// headset that has been unplugged falls back to another device.
+    private(set) var activeInputName: String?
+
+    var chosenInputUnavailable: Bool {
+        AudioInputSelection.isPreferenceUnavailable(preferredUID: settings.inputDeviceUID,
+                                                    available: availableInputDevices)
+    }
+
+    func selectInputDevice(uid: String?) throws {
+        var updated = settings
+        updated.inputDeviceUID = uid
+        try SettingsStore().save(updated)
+        settings = updated
+        if isListening { stopPipeline(); startListening() }
+    }
+
+    /// Microphones appear and disappear while the app runs. Without this a
+    /// headset plugged in later is ignored, and a headset unplugged leaves the
+    /// app silently deaf while still reporting that it is listening.
+    private func observeDeviceChanges() {
+        let names: [Notification.Name] = [
+            AVCaptureDevice.wasConnectedNotification,
+            AVCaptureDevice.wasDisconnectedNotification,
+        ]
+        for name in names {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.isListening else { return }
+                    self.stopPipeline()
+                    self.startListening()
+                }
+            }
+        }
+    }
+
     var isChatGPTRunning: Bool {
         !NSRunningApplication.runningApplications(
             withBundleIdentifier: VoicePanelObserver.chatGPTBundleIdentifier).isEmpty
@@ -208,7 +247,8 @@ final class AppController {
                     ?? modelsDirectory.appendingPathComponent("keywords.txt"),
                 keywordsThreshold: launchSettings.wakeKeywordsThreshold,
                 keywordsScore: launchSettings.wakeKeywordsScore))
-            let mic = try AudioCapture(onFrame: { [weak self] frame in
+            let mic = try AudioCapture(preferredUID: launchSettings.inputDeviceUID,
+                                       onFrame: { [weak self] frame in
                 // Only one phrase exists. Ending a Voice session is ChatGPT's
                 // own job - its panel closes itself, and the panel watch re-arms
                 // this helper when it does. A wake heard while Voice is already
@@ -218,6 +258,7 @@ final class AppController {
             })
             self.wake = wake
             self.audio = mic
+            self.activeInputName = mic.deviceName
             try mic.start()
             status = activation.isArmed ? .listening : .latched
         } catch {

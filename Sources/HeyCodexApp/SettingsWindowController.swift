@@ -11,6 +11,10 @@ final class SettingsWindowController: NSWindowController {
     private let sensitivity = NSPopUpButton(frame: .zero, pullsDown: false)
     private let autoUpdates = NSButton(checkboxWithTitle: "Check for updates automatically",
                                        target: nil, action: nil)
+    private let inputDevice = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let inputHint = NSTextField(wrappingLabelWithString: "")
+    /// Menu index to device UID. Index 0 is Automatic, which has no UID.
+    private var inputDeviceUIDs: [String?] = [nil]
     private let notice = NSTextField(labelWithString: "")
     private let phraseValue = NSTextField(labelWithString: "")
     /// Set by AppDelegate so Settings opens the same enrollment window the menu
@@ -59,6 +63,19 @@ final class SettingsWindowController: NSWindowController {
         phraseRow.spacing = 12
         root.addArrangedSubview(phraseRow)
         root.addArrangedSubview(hint("Use anything you like. “Hey Jarvis”, “Hey Computer”, or something only you would say. Two or three words works best."))
+
+        root.addArrangedSubview(rule())
+
+        // Microphone -------------------------------------------------------
+        root.addArrangedSubview(sectionHeader("Microphone"))
+        inputDevice.target = self
+        inputDevice.action = #selector(saveInputDevice)
+        root.addArrangedSubview(inputDevice)
+        inputHint.font = .systemFont(ofSize: 11)
+        inputHint.textColor = .secondaryLabelColor
+        inputHint.preferredMaxLayoutWidth = 470
+        inputHint.maximumNumberOfLines = 0
+        root.addArrangedSubview(inputHint)
 
         root.addArrangedSubview(rule())
 
@@ -126,10 +143,56 @@ final class SettingsWindowController: NSWindowController {
         sensitivity.selectItem(at: sensitivityIndex(for: controller.settings.wakeKeywordsThreshold))
         phraseValue.stringValue = "“\(controller.settings.wakePhrase)”"
         autoUpdates.state = controller.settings.automaticUpdateChecks ? .on : .off
+        reloadInputDevices()
         notice.stringValue = ""
     }
 
     @objc private func changeWakePhrase() { onChangeWakePhrase?() }
+
+    /// Rebuilt every time the window opens, because microphones come and go.
+    private func reloadInputDevices() {
+        let devices = controller.availableInputDevices
+        inputDevice.removeAllItems()
+        inputDeviceUIDs = [nil]
+        inputDevice.addItem(withTitle: "Automatic (follow system setting)")
+        for device in devices {
+            inputDevice.addItem(withTitle: device.name)
+            inputDeviceUIDs.append(device.uid)
+        }
+        let chosen = controller.settings.inputDeviceUID
+        if let chosen, let index = inputDeviceUIDs.firstIndex(of: chosen) {
+            inputDevice.selectItem(at: index)
+        } else if let chosen {
+            // Saved but not plugged in. Keep it listed and selected rather than
+            // silently rewriting the preference, so reconnecting just works.
+            inputDevice.addItem(withTitle: "Not connected")
+            inputDeviceUIDs.append(chosen)
+            inputDevice.selectItem(at: inputDeviceUIDs.count - 1)
+        } else {
+            inputDevice.selectItem(at: 0)
+        }
+
+        if devices.isEmpty {
+            inputHint.stringValue = "No microphone is connected. Hey Codex cannot hear anything until one is."
+        } else if controller.chosenInputUnavailable {
+            inputHint.stringValue = "That microphone is not connected right now, so Hey Codex is listening on \(controller.activeInputName ?? "another device"). It will switch back when you plug it in again."
+        } else if let active = controller.activeInputName {
+            inputHint.stringValue = "Listening on \(active). Bluetooth headsets and USB mics show up here once connected."
+        } else {
+            inputHint.stringValue = "Bluetooth headsets and USB microphones appear here once they are connected."
+        }
+    }
+
+    @objc private func saveInputDevice() {
+        let index = inputDevice.indexOfSelectedItem
+        guard index >= 0, index < inputDeviceUIDs.count else { return }
+        do {
+            try controller.selectInputDevice(uid: inputDeviceUIDs[index])
+            notice.textColor = .systemGreen
+            notice.stringValue = "Saved. Listening restarted on \(controller.activeInputName ?? "the new microphone")."
+            reloadInputDevices()
+        } catch { show(error.localizedDescription) }
+    }
 
     @objc private func saveAutoUpdates() {
         do {

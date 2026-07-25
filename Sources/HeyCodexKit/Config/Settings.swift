@@ -68,6 +68,9 @@ public struct Settings: Codable, Equatable, Sendable {
     /// the only network request the app ever makes, and it is the only setting
     /// that turns any network access on or off.
     public var automaticUpdateChecks: Bool
+    /// Chosen microphone, by AVFoundation unique ID. Nil follows the system
+    /// default, which is what most people want.
+    public var inputDeviceUID: String?
     public var lastUpdateCheck: Date?
 
     public init(projectDirectory: String = NSHomeDirectory(),
@@ -92,6 +95,7 @@ public struct Settings: Codable, Equatable, Sendable {
                 voiceShortcutSetupCompleted: Bool = false,
                 voicePanelDetectionProven: Bool = false,
                 automaticUpdateChecks: Bool = true,
+                inputDeviceUID: String? = nil,
                 lastUpdateCheck: Date? = nil) {
         self.projectDirectory = projectDirectory
         self.preferredTarget = preferredTarget
@@ -115,6 +119,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
         self.voicePanelDetectionProven = voicePanelDetectionProven
         self.automaticUpdateChecks = automaticUpdateChecks
+        self.inputDeviceUID = inputDeviceUID
         self.lastUpdateCheck = lastUpdateCheck
     }
 
@@ -170,6 +175,7 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? false
         self.automaticUpdateChecks = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks)
             ?? true
+        self.inputDeviceUID = try container.decodeIfPresent(String.self, forKey: .inputDeviceUID)
         self.lastUpdateCheck = try container.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
     }
 
