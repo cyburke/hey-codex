@@ -58,4 +58,41 @@ public enum AudioSamples {
         }
         try file.write(from: buffer)
     }
+
+    /// Root-mean-square level, on the same [-1, 1] scale `load` returns. The
+    /// low-level signal enrollment needs: a phrase the model handles perfectly
+    /// produces zero hits once its RMS is scaled down to real quiet-mic levels
+    /// (measured on saved enrollment takes at RMS 0.005-0.009 against the KWS
+    /// model's own reference audio at 0.047 - see AUDIT-2026-07-24.md P1.1).
+    public static func rms(_ samples: [Float]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        let sumSquares = samples.reduce(Float(0)) { $0 + $1 * $1 }
+        return (sumSquares / Float(samples.count)).squareRoot()
+    }
+
+    /// Largest absolute sample value, on the same [-1, 1] scale.
+    public static func peak(_ samples: [Float]) -> Float {
+        samples.reduce(Float(0)) { max($0, abs($1)) }
+    }
+
+    /// Boosts a quiet clip toward `targetRMS`, but never past `peakCeiling` on
+    /// the loudest sample. RMS-matching alone was measured insufficient for one
+    /// voice whose crest factor (peak/RMS ratio) differed from the reference -
+    /// the boost needed to hit target RMS would have clipped its peaks, which
+    /// distorts the waveform the KWS model actually sees rather than just
+    /// scaling it. Only ever boosts (a clip already at or above target is
+    /// returned unchanged) - normalization is a rescue for quiet input, not a
+    /// general loudness leveler.
+    public static func normalized(_ samples: [Float], targetRMS: Float, peakCeiling: Float) -> [Float] {
+        guard !samples.isEmpty else { return samples }
+        let level = rms(samples)
+        guard level > 0 else { return samples }
+        var gain = targetRMS / level
+        let loudest = peak(samples)
+        if loudest > 0 {
+            gain = min(gain, peakCeiling / loudest)
+        }
+        guard gain > 1 else { return samples }
+        return samples.map { $0 * gain }
+    }
 }

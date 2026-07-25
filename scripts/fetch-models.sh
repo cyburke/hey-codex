@@ -8,7 +8,12 @@ cd "$MODELS"
 # --- Wake stage: English streaming zipformer KWS model ---
 # Asset verified on release tag `kws-models` (k2-fsa/sherpa-onnx).
 KWS="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
-if [ ! -d "$KWS" ]; then
+# Check for tokens.txt, not just the directory: bpe.vocab is tracked in git
+# (see .gitignore) as a small deterministic derivative of this model's
+# bpe.model, so the directory already exists in a fresh clone before this
+# script ever runs. A directory-only check would see it and skip the
+# download, leaving the onnx models and tokens.txt missing.
+if [ ! -f "$KWS/tokens.txt" ]; then
   curl -fL -O "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/${KWS}.tar.bz2"
   tar xjf "${KWS}.tar.bz2" && rm "${KWS}.tar.bz2"
 fi

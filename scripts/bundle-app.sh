@@ -35,10 +35,16 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # Within the wake-word model, copy only the files the app opens: the three onnx
 # models and tokens.txt for WakeWordEngine, plus bpe.vocab for KeywordTokenizer,
 # which encodes a wake phrase into model tokens. The released directory also ships
-# int8 variants, the bpe.model protobuf, test WAVs and a README; none are read at
-# runtime. bpe.vocab is generated from bpe.model by scripts/make-bpe-vocab.py and is
-# 12 KB. Keep in sync with WakeWordEngine.init and KeywordTokenizer - a missing file
-# fails loudly there.
+# int8 variants, test WAVs and a README; none of those are read at runtime.
+# bpe.vocab is generated from bpe.model by scripts/make-bpe-vocab.py and is 12 KB.
+#
+# bpe.model itself is deliberately NOT bundled, but it is not inert either:
+# WakeWordEngine.init does a FileManager.fileExists check for it (by the name in
+# KeywordTuning.bpeVocabName) to decide modeling_unit "bpe" vs falling back to
+# "cjkchar". Leaving it out of KWS_FILES means that check always misses on a
+# shipped build, so every release currently runs with the cjkchar fallback -
+# see WakeWordEngine.swift and P1.4 in AUDIT-2026-07-24.md. Keep in sync with
+# WakeWordEngine.init and KeywordTokenizer - a missing file fails loudly there.
 KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
 KWS_FILES=(
     "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"
@@ -54,7 +60,18 @@ fi
 mkdir -p "$APP/Contents/Resources/Models/$KWS_MODEL"
 for f in "${KWS_FILES[@]}"; do
     if [ ! -f "$ROOT/Models/$KWS_MODEL/$f" ]; then
-        echo "Missing wake-word model file: $KWS_MODEL/$f. Run ./scripts/fetch-models.sh before bundling." >&2
+        if [ "$f" = "bpe.vocab" ]; then
+            # bpe.vocab is tracked in git (see .gitignore), so a normal clone
+            # already has it. It's only missing here if the KWS model was
+            # re-pinned to a new bpe.model without regenerating this file.
+            echo "Missing wake-word model file: $KWS_MODEL/$f." >&2
+            echo "Regenerate it with:" >&2
+            echo "  pip install sentencepiece" >&2
+            echo "  python3 scripts/make-bpe-vocab.py Models/$KWS_MODEL" >&2
+            echo "then commit the resulting Models/$KWS_MODEL/bpe.vocab." >&2
+        else
+            echo "Missing wake-word model file: $KWS_MODEL/$f. Run ./scripts/fetch-models.sh before bundling." >&2
+        fi
         exit 1
     fi
     cp "$ROOT/Models/$KWS_MODEL/$f" "$APP/Contents/Resources/Models/$KWS_MODEL/$f"

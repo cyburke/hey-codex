@@ -9,14 +9,19 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/HeyCodex.app"
-VERSION="${1:-}"
 
 if [ ! -d "$APP" ]; then
     echo "No dist/HeyCodex.app. Run ./scripts/build-release.sh first." >&2
     exit 1
 fi
+# The version comes from the built app's own Info.plist, not a caller-supplied
+# argument: a hand-typed argument here is exactly how the published cask ended
+# up saying 0.1.1 while Info.plist said 0.1.2 - nothing cross-checked them.
+# Reading it from the bundle we are about to package also guarantees the cask
+# always names the version that was actually built.
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 if [ -z "$VERSION" ]; then
-    echo "usage: ./scripts/make-release.sh <version>   e.g. 0.1.0" >&2
+    echo "Could not read CFBundleShortVersionString from $APP/Contents/Info.plist" >&2
     exit 1
 fi
 
@@ -44,17 +49,23 @@ cask "hey-codex" do
   desc "Menu-bar wake word that opens ChatGPT Voice"
   homepage "https://github.com/cyburke/hey-codex"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "HeyCodex.app"
 
+  # Hey Codex is signed but not notarized, so macOS quarantines the download and
+  # blocks the first launch behind System Settings. Homebrew's own
+  # --no-quarantine option was removed in Homebrew 6, so clear the attribute
+  # here instead. Installing from this tap is the user opting in to that.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/HeyCodex.app"],
+                   sudo: false
+  end
+
   caveats <<~EOS
-    Hey Codex is not notarized, so it must be installed with --no-quarantine:
-
-      brew install --cask --no-quarantine cyburke/tap/hey-codex
-
-    On first launch, grant Microphone and Accessibility permission when asked.
-    Accessibility is what lets Hey Codex press the ChatGPT Voice hotkey.
+    Launch Hey Codex, then grant Microphone and Accessibility when asked.
+    Accessibility is what lets it press the ChatGPT Voice hotkey.
   EOS
 
   uninstall quit: "com.heycodex.app"
@@ -70,4 +81,4 @@ echo
 echo "Next:"
 echo "  1. gh release create v$VERSION $ZIP --title \"Hey Codex $VERSION\" --notes-file <notes>"
 echo "  2. Commit the cask above to github.com/cyburke/homebrew-tap as Casks/hey-codex.rb"
-echo "  3. Verify: brew install --cask --no-quarantine cyburke/tap/hey-codex"
+echo "  3. Verify: brew install --cask cyburke/tap/hey-codex"

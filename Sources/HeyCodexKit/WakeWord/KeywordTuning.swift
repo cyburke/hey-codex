@@ -2,11 +2,13 @@ import Foundation
 
 /// Every tuning value the keyword spotter takes, in one place, with the reason.
 ///
-/// These were previously scattered as literals, and two of them were wrong:
-/// `keywords_score` was 2.0 against a library default of 1.0, and the modeling
-/// unit was left at "cjkchar" (Chinese characters) while feeding an English BPE
-/// model, with no BPE vocabulary supplied at all. Library defaults are from
-/// `KeywordSpotterConfig` in sherpa-onnx.
+/// These were previously scattered as literals, and `keywords_score` was one of
+/// them: 2.0 against a library default of 1.0. The modeling unit is left at the
+/// library's "cjkchar" default deliberately - every keyword is pre-tokenized by
+/// `KeywordTokenizer` before sherpa ever sees it, so the BPE-vs-cjkchar setting
+/// has no effect here; measured across the model's own reference audio and real
+/// enrollment takes at every threshold (AUDIT-2026-07-24.md P1.4). Library
+/// defaults are from `KeywordSpotterConfig` in sherpa-onnx.
 public enum KeywordTuning {
     /// Acoustic probability needed to trigger. Lower fires more readily.
     /// Library default, and a sensible baseline for a phrase the user has not
@@ -27,13 +29,6 @@ public enum KeywordTuning {
     /// own, so waiting for a short pause is the cheapest false-trigger defence
     /// available.
     public static let numTrailingBlanks = 2
-
-    /// Tells sherpa the keywords file is English BPE text rather than CJK
-    /// characters, so plain text can be tokenised canonically.
-    public static let modelingUnit = "bpe"
-
-    /// Ships inside the KWS model directory.
-    public static let bpeVocabName = "bpe.model"
 
     /// Thresholds tried during enrollment, strictest first. Stops at 0.08 to
     /// stay inside the range the sensitivity control allows.

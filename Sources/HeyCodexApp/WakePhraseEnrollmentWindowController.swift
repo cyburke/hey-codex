@@ -23,6 +23,10 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// Whether the user has already been warned that this phrase looks unlikely to
     /// work and chose to record it anyway.
     private var acknowledgedRisk = false
+    /// The fitness check's last verdict for the phrase being recorded, so a failed
+    /// enrollment can tell an unspottable phrase apart from a mic or delivery
+    /// problem. Defaults to `.good` when the check never ran (no models directory).
+    private var lastFitnessVerdict: WakePhraseFitness.Verdict = .good
     private let titleLabel = NSTextField(labelWithString: "Pick your own wake phrase")
 
     init(controller: AppController, initialPhrase: String, finished: @escaping () -> Void) {
@@ -52,7 +56,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
 
         titleLabel.font = .systemFont(ofSize: 19, weight: .semibold)
         root.addArrangedSubview(titleLabel)
-        root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Type anything you like, then say it three times so Hey Codex learns how you say it. Those recordings are used here on your Mac and then discarded."))
+        root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Type anything you like, then say it three times so Hey Codex learns how you say it. By default, those recordings are used here on your Mac and then discarded."))
         let presets = NSPopUpButton(frame: .zero, pullsDown: false)
         presets.addItems(withTitles: WakePhrase.presets)
         presets.addItem(withTitle: "Custom…")
@@ -155,6 +159,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// real recordings decide.
     private func checkFitness(of phrase: String) {
         guard let models = controller.modelsDirectory else {
+            lastFitnessVerdict = .good
             beginRecording()
             return
         }
@@ -172,6 +177,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 })
             await MainActor.run {
                 guard let self else { return }
+                self.lastFitnessVerdict = verdict
                 switch verdict {
                 case .good:
                     self.beginRecording()
@@ -325,9 +331,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 guard let self else { return }
                 guard result.isUsable else {
                     self.progress.textColor = .systemOrange
-                    self.progress.stringValue = result.firedCount == 0
-                        ? "None of the three recordings triggered the phrase.\nCheck the right microphone is selected, then try again."
-                        : "Only \(result.firedCount) of 3 recordings triggered it.\nTry again, saying it the same way each time."
+                    self.progress.stringValue = self.failureMessage(firedCount: result.firedCount)
                     self.phraseField.isEnabled = true
                     self.startButton.isEnabled = true
                     self.restoreListening()
@@ -347,6 +351,21 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 }
             }
         }
+    }
+
+    /// None of the three takes fired. Say why in a way that points at the right
+    /// fix: the fitness check already told us, moments earlier, whether this
+    /// phrase can be spotted at all. If it cannot, no amount of re-recording or
+    /// microphone fiddling will change that. If it can, the recordings themselves
+    /// are the likely problem, and mic and delivery advice are fair.
+    private func failureMessage(firedCount: Int) -> String {
+        guard firedCount == 0 else {
+            return "Only \(firedCount) of 3 recordings triggered it.\nTry again, saying it the same way each time."
+        }
+        if lastFitnessVerdict == .cannotSpot {
+            return "This phrase looks like the problem, not your microphone.\nTry a different phrase."
+        }
+        return "None of the three recordings triggered the phrase.\nCheck the right microphone is selected, then try again."
     }
 
     /// Confirmation belongs in this window. An NSAlert here was the only modal in

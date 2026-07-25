@@ -34,19 +34,6 @@ public struct EditorAvailability: Sendable {
         return entries.contains { $0.hasPrefix(prefix) }
     }
 
-    /// Editors that are installed + extension-ready for the given tool.
-    public func readyEditors(integration: EditorIntegration) -> Set<EditorKind> {
-        Set(EditorKind.allCases.filter { isReady($0, integration: integration) })
-    }
-
-    /// Editors whose app is installed but the tool's extension is missing —
-    /// shown disabled in the picker (e.g. Antigravity without Claude Code).
-    public func installedMissingExtension(integration: EditorIntegration) -> Set<EditorKind> {
-        Set(EditorKind.allCases.filter {
-            appInstalled($0.bundleID) && !hasExtension($0, glob: integration.extensionGlob)
-        })
-    }
-
     public static func defaultAppInstalled(_ bundleID: String) -> Bool {
         #if canImport(AppKit)
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) != nil

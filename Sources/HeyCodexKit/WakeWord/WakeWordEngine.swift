@@ -3,7 +3,20 @@ import CSherpaOnnx
 
 /// Wraps the sherpa-onnx online keyword spotter for the "hey codex" wake word.
 public final class WakeWordEngine {
-    public enum Error: Swift.Error { case missingModelFile(String) }
+    /// `guard let engine = try? WakeWordEngine(...)` at call sites throws away
+    /// the specific case, but `LocalizedError` means whichever file was missing
+    /// still survives into any `error.localizedDescription` those call sites
+    /// already show the user, instead of every distinct failure collapsing into
+    /// the same generic message (AUDIT-2026-07-24.md P1.5).
+    public enum Error: Swift.Error, LocalizedError {
+        case missingModelFile(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .missingModelFile(let name): return "Missing wake-word model file: \(name)"
+            }
+        }
+    }
 
     private let spotter: SherpaOnnxKeywordSpotterWrapper
 
@@ -14,26 +27,27 @@ public final class WakeWordEngine {
     ///   - keywordsScore: per-keyword boost added to keyword-path hypotheses
     ///     during the modified beam search — it keeps the keyword path alive in
     ///     the beam when acoustic evidence is weak. This is the primary lever for
-    ///     spotting a hard wake word on a small model; see
-    ///     internal design notes for the calibrated value.
+    ///     spotting a hard wake word on a small model; see `KeywordTuning.score`
+    ///     for the calibrated value and why it is 1.5, not the library's 1.0.
     ///   - maxActivePaths: beam width for the keyword spotter's modified search.
     ///   - numTrailingBlanks: blank frames required after the keyword before it
     ///     is finalised. Higher makes it wait for a pause, which cuts false
     ///     triggers mid-sentence at the cost of a little latency.
-    ///   - modelingUnit: how sherpa interprets the keywords file. With "bpe" and
-    ///     a `bpeVocab`, keywords may be written as plain text and sherpa
-    ///     tokenises them canonically. Left at the library's "cjkchar" default
-    ///     this model was being handed Chinese-character rules for English text.
     public init(modelDir: URL, keywordsFile: URL,
                 keywordsThreshold: Float = KeywordTuning.threshold,
                 keywordsScore: Float = KeywordTuning.score,
                 maxActivePaths: Int = KeywordTuning.maxActivePaths,
-                numTrailingBlanks: Int = KeywordTuning.numTrailingBlanks,
-                modelingUnit: String = KeywordTuning.modelingUnit,
-                bpeVocabFile: String? = nil) throws {
+                numTrailingBlanks: Int = KeywordTuning.numTrailingBlanks) throws {
         func path(_ name: String) throws -> String {
             let u = modelDir.appendingPathComponent(name)
-            guard FileManager.default.fileExists(atPath: u.path) else { throw Error.missingModelFile(name) }
+            guard FileManager.default.fileExists(atPath: u.path) else {
+                // `guard let engine = try? WakeWordEngine(...)` at every call site
+                // collapses every distinct missing file into one generic failure -
+                // log the specific name here so it survives that, in Console.app
+                // even when nobody kept the thrown error (AUDIT-2026-07-24.md P1.5).
+                Log.audio.error("WakeWordEngine: missing model file \(name, privacy: .public) in \(modelDir.path, privacy: .public)")
+                throw Error.missingModelFile(name)
+            }
             return u.path
         }
         // Filenames match the gigaspeech KWS release (verified against the
@@ -42,24 +56,24 @@ public final class WakeWordEngine {
             encoder: try path("encoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
             decoder: try path("decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
             joiner:  try path("joiner-epoch-12-avg-2-chunk-16-left-64.onnx"))
-        // The BPE vocabulary is what lets a plain-text keyword be tokenised the
-        // same way the model was trained, instead of us guessing token splits.
-        let bpe = bpeVocabFile ?? (FileManager.default.fileExists(
-            atPath: modelDir.appendingPathComponent(KeywordTuning.bpeVocabName).path)
-            ? modelDir.appendingPathComponent(KeywordTuning.bpeVocabName).path : "")
+        // KeywordTokenizer pre-tokenizes every keyword (e.g. "▁HE Y ▁CO DE X")
+        // before it ever reaches sherpa, so sherpa never has to tokenize raw text
+        // itself here and modeling_unit/bpe_vocab make no difference to what
+        // fires: measured by feeding the model's own reference audio and three
+        // real enrollment takes through both settings across the full threshold
+        // sweep and diffing the results - identical in every case (AUDIT-2026-07-24.md
+        // P1.4). Left at the library's "cjkchar" default; a `bpe.model` file is
+        // deliberately not shipped (see scripts/bundle-app.sh) so this also matches
+        // what every built app actually runs.
         if ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" {
-            let unit = bpe.isEmpty ? "cjkchar" : modelingUnit
-            let shown = bpe.isEmpty ? "<empty>" : bpe
-            FileHandle.standardError.write(Data("[swift] unit=\(unit) bpe=\(shown)\n".utf8))
+            FileHandle.standardError.write(Data("[swift] unit=cjkchar bpe=<unused>\n".utf8))
         }
         let model = sherpaOnnxOnlineModelConfig(
             tokens: try path("tokens.txt"),
             transducer: transducer,
             numThreads: 1,
             provider: "cpu",
-            debug: ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" ? 1 : 0,
-            modelingUnit: bpe.isEmpty ? "cjkchar" : modelingUnit,
-            bpeVocab: bpe)
+            debug: ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" ? 1 : 0)
         let feat = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
         var config = sherpaOnnxKeywordSpotterConfig(
             featConfig: feat,

@@ -236,72 +236,6 @@ final class Counter: @unchecked Sendable {
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
-/// Does a plain-text keyword work, given the BPE vocabulary?
-///
-/// This is the assumption the whole keyword design now rests on. Previously the
-/// app hand-wrote token splits like "▁HE Y ▁CO DE X" and enrollment derived them
-/// from what the model decoded, which produced nonsense such as "▁A GE ▁A R G US"
-/// for "Hey Jarvis". Canonical tokenisation removes the guesswork, but only if
-/// sherpa really accepts raw text here.
-/// Run: `swift run hey-codex-selftest bpe-keywords`
-func probeBpeKeywords() -> Bool {
-    run("keyword.plainTextWithBpeVocab") { c in
-        func spoken(_ phrase: String) throws -> [Float] {
-            let aiff = FileManager.default.temporaryDirectory
-                .appendingPathComponent("kws-\(UUID().uuidString).aiff")
-            let wav = aiff.deletingPathExtension().appendingPathExtension("wav")
-            defer {
-                try? FileManager.default.removeItem(at: aiff)
-                try? FileManager.default.removeItem(at: wav)
-            }
-            let say = Process()
-            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-            say.arguments = ["-v", "Samantha", "-o", aiff.path, phrase]
-            try say.run(); say.waitUntilExit()
-            let convert = Process()
-            convert.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
-            convert.arguments = ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff.path, wav.path]
-            try convert.run(); convert.waitUntilExit()
-            return try AudioSamples.load(wav)
-        }
-
-        func keywordFile(_ contents: String) throws -> URL {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("kw-\(UUID().uuidString).txt")
-            try contents.write(to: url, atomically: true, encoding: .utf8)
-            return url
-        }
-
-        let bpe = kwsDir.appendingPathComponent(KeywordTuning.bpeVocabName)
-        c.assert(FileManager.default.fileExists(atPath: bpe.path),
-                 "bpe.model missing from the model directory; plain text keywords cannot work without it")
-
-        let positive = try spoken("hey codex")
-        let negative = try spoken("the weather today is sunny and warm")
-
-        // Plain text, tokenised by sherpa using the BPE vocabulary.
-        let plain = try keywordFile("HEY CODEX\n")
-        let engine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: plain,
-                                        keywordsThreshold: KeywordTuning.threshold,
-                                        keywordsScore: KeywordTuning.score)
-        let firedOnPhrase = diagDetect(engine, positive, "plain-text keyword vs \"hey codex\"")
-        c.assert(firedOnPhrase, "a plain text keyword did not fire on the phrase it names")
-
-        let negEngine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: plain,
-                                          keywordsThreshold: KeywordTuning.threshold,
-                                          keywordsScore: KeywordTuning.score)
-        c.assert(!diagDetect(negEngine, negative, "plain-text keyword vs unrelated speech"),
-                 "plain text keyword fired on unrelated speech")
-
-        // Per-keyword score and threshold, the documented way to tune one keyword
-        // without moving a global dial that affects every other one.
-        let tuned = try keywordFile("HEY CODEX :1.5 #0.20\n")
-        let tunedEngine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: tuned)
-        c.assert(diagDetect(tunedEngine, positive, "per-keyword :score #threshold"),
-                 "per-keyword score and threshold syntax was not accepted")
-    }
-}
-
 /// Does the app's keyword encoding match official sentencepiece, exactly?
 ///
 /// A keyword that differs from the model's own encoding by a single token never
@@ -370,7 +304,15 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
             print("  [skip] no saved takes at \(dir.path)")
             return
         }
+        // Saved takes were captured before EnrollmentRecorder normalized gain (or
+        // may simply be a quiet mic), so replay them the same way the live path
+        // now does: through AudioSamples.normalized at EnrollmentRecorder's
+        // target, not raw off disk. Without this, a real quiet recording of a
+        // perfectly good phrase reproduces the P1.1 bug this probe exists to
+        // catch, rather than testing the fix for it.
         let clips = takes.compactMap { try? AudioSamples.load($0) }
+            .map { AudioSamples.normalized($0, targetRMS: EnrollmentRecorder.targetRMS,
+                                           peakCeiling: EnrollmentRecorder.peakCeiling) }
         c.assertEqual(clips.count, takes.count, "every saved take should load")
         guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
             c.fail("cannot tokenise \(phrase)"); return
@@ -408,6 +350,50 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
         // clearance that turns out to be wrong is not.
         if verdict == .good {
             c.assert(result.isUsable, "fitness cleared this phrase but no recording of it fires")
+        }
+
+        // P1.1: does capture-time gain normalization actually rescue a phrase
+        // silenced by level alone, without also rescuing ordinary speech into a
+        // false trigger? "hey codex" is the proven-spottable phrase (see
+        // wake.detectsWakePhraseInPositiveClip); scale a synthesized take of it
+        // down to a real quiet-mic level and confirm EnrollmentRecorder's
+        // normalization (AudioSamples.normalized, targeting the same RMS/peak
+        // EnrollmentRecorder uses) brings it back to firing. A synthesized
+        // ordinary sentence, scaled and normalized exactly the same way, must
+        // still stay silent - normalization must not manufacture false triggers
+        // out of quiet background speech.
+        func scaled(_ samples: [Float], toRMS target: Float) -> [Float] {
+            let level = AudioSamples.rms(samples)
+            guard level > 0 else { return samples }
+            let gain = target / level
+            return samples.map { $0 * gain }
+        }
+        if let knownGood = SynthesizedSpeech.samples(of: "hey codex"),
+           let knownTokens = KeywordTokenizer.tokenize("hey codex", modelDir: kwsDir),
+           let negative = SynthesizedSpeech.samples(of: SynthesizedSpeech.falseAlarmPhrases[0]) {
+            let quietGood = scaled(knownGood, toRMS: EnrollmentRecorder.lowLevelRMS)
+            let quietNegative = scaled(negative, toRMS: EnrollmentRecorder.lowLevelRMS)
+            print(String(format: "  gain: quiet-good rms=%.4f  quiet-negative rms=%.4f  (both scaled to lowLevelRMS=%.3f)",
+                         AudioSamples.rms(quietGood), AudioSamples.rms(quietNegative), EnrollmentRecorder.lowLevelRMS))
+            let normalizedGood = AudioSamples.normalized(quietGood, targetRMS: EnrollmentRecorder.targetRMS,
+                                                         peakCeiling: EnrollmentRecorder.peakCeiling)
+            let normalizedNegative = AudioSamples.normalized(quietNegative, targetRMS: EnrollmentRecorder.targetRMS,
+                                                             peakCeiling: EnrollmentRecorder.peakCeiling)
+            print(String(format: "  gain: after normalize   good rms=%.4f peak=%.3f  negative rms=%.4f peak=%.3f",
+                         AudioSamples.rms(normalizedGood), AudioSamples.peak(normalizedGood),
+                         AudioSamples.rms(normalizedNegative), AudioSamples.peak(normalizedNegative)))
+            let strictest = KeywordTuning.calibrationThresholds.first ?? KeywordTuning.threshold
+            let goodFires = KeywordTuning.calibrationThresholds.contains { t in
+                calibration.fires(WakeCalibration.keywordLine(tokens: knownTokens, threshold: t), t, normalizedGood)
+            }
+            let negativeFires = calibration.fires(
+                WakeCalibration.keywordLine(tokens: knownTokens, threshold: strictest), strictest, normalizedNegative)
+            print("  gain: known-good fires after normalize? \(goodFires ? "yes" : "NO")"
+                  + "   negative fires after normalize? \(negativeFires ? "YES (bad)" : "no")")
+            c.assert(goodFires, "normalization should rescue \"hey codex\" scaled down to RMS \(EnrollmentRecorder.lowLevelRMS)")
+            c.assert(!negativeFires, "normalization must not turn quiet ordinary speech into a false trigger")
+        } else {
+            print("  [skip] gain-normalization check: speech synthesis unavailable")
         }
     }
 }
@@ -547,6 +533,14 @@ func checkWakePhraseDefaults() -> Bool {
         c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
                       "Hey Codex must remain the release default")
         c.assertEqual(WakePhrase.presets, ["Hey Codex", "Hey Jarvis", "Hey Computer"])
+    }
+}
+
+// Mirrors CodexSettingsTests.test_defaultWakeKeywordsScoreMatchesCalibratedTuning.
+func checkDefaultKeywordsScore() -> Bool {
+    run("wakePhrase.defaultScoreMatchesTuning") { c in
+        c.assertEqual(Settings.default.wakeKeywordsScore, KeywordTuning.score,
+                      "a fresh install must run at the calibrated score, not a second hardcoded literal")
     }
 }
 
@@ -1064,9 +1058,6 @@ func main() -> Int32 {
     if requested == "tokenizer" {
         return probeTokenizer() ? 0 : 1
     }
-    if requested == "bpe-keywords" {
-        return probeBpeKeywords() ? 0 : 1
-    }
     if requested == "audio-footprint" {
         return probeAudioFootprint() ? 0 : 1
     }
@@ -1092,6 +1083,7 @@ func main() -> Int32 {
     maybe("latch", checkActivationLatch)
     maybe("shortcut", checkVoiceShortcut)
     maybe("wake-phrase", checkWakePhraseDefaults)
+    maybe("wake-phrase-score", checkDefaultKeywordsScore)
     // `all` deliberately uses only release-relevant, deterministic checks.
     // The remaining probes stay available by explicit name for model diagnosis.
     maybe("audio", checkAudioLoader)

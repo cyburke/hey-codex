@@ -1,16 +1,26 @@
 import Foundation
 
-/// Writes one line per enrollment attempt next to the settings file.
+/// Writes one line per enrollment attempt next to the settings file - opt-in only.
 ///
 /// Enrollment can fail for reasons invisible from the UI: clips too short, the
 /// model decoding three different token sequences for the same phrase, or a
 /// threshold sweep that never makes every take fire. Without a record, a
-/// rejection is unexplainable to the user and unfixable by anyone else.
+/// rejection is unexplainable to the user and unfixable by anyone else. But the
+/// app tells the user on screen that nothing is recorded or stored, so this must
+/// never write anything unless someone has deliberately created the marker file
+/// below - there is no UI path to it.
 public enum EnrollmentDiagnostics {
+    /// Test-only seam: overrides the base directory below `~/Library/Application
+    /// Support` normally resolves to. Internal (not public), so it cannot be set
+    /// from HeyCodexApp - only `@testable import` reaches it. Without this, a test
+    /// exercising `record`/`saveAudioIfEnabled` would write into the real user's
+    /// Application Support directory.
+    nonisolated(unsafe) static var baseDirectoryOverride: URL?
+
     public static var fileURL: URL {
-        FileManager.default
+        let base = baseDirectoryOverride ?? FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HeyCodex/enrollment.log")
+        return base.appendingPathComponent("HeyCodex/enrollment.log")
     }
 
     /// Only exists when the marker file below is present. Enrollment audio is
@@ -31,11 +41,20 @@ public enum EnrollmentDiagnostics {
     public static func saveAudioIfEnabled(_ clips: [[Float]]) {
         guard keepsAudio else { return }
         let dir = audioDirectory
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            Log.diagnostics.error("enrollment-audio directory create failed: \(String(describing: error), privacy: .public)")
+            return
+        }
         for (index, clip) in clips.enumerated() {
             let url = dir.appendingPathComponent("take-\(index + 1).wav")
             try? FileManager.default.removeItem(at: url)
-            try? AudioSamples.write(clip, to: url)
+            do {
+                try AudioSamples.write(clip, to: url)
+            } catch {
+                Log.diagnostics.error("enrollment audio write failed for take-\(index + 1, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
@@ -58,11 +77,16 @@ public enum EnrollmentDiagnostics {
         return out
     }
 
+    /// Opt-in, gated by the same marker as `keepsAudio` (see above) - not a
+    /// second on/off switch to keep in sync. With no marker file, an enrollment
+    /// leaves no `enrollment.log` at all, matching the privacy claim the app
+    /// makes on screen (AUDIT-2026-07-24.md P0.1).
     public static func record(phrase: String,
                               tokens: String,
                               sampleCounts: [Int],
                               grid: String = "",
                               result: WakeCalibration.Result) {
+        guard keepsAudio else { return }
         let seconds = sampleCounts.map { String(format: "%.2fs", Double($0) / 16000.0) }
         let entry = """
             phrase=\(phrase)
@@ -73,14 +97,21 @@ public enum EnrollmentDiagnostics {
 
             """
         let url = fileURL
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                withIntermediateDirectories: true)
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(Data(entry.utf8))
-            try? handle.close()
-        } else {
-            try? entry.data(using: .utf8)?.write(to: url)
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile()
+                try handle.write(contentsOf: Data(entry.utf8))
+                try handle.close()
+            } else {
+                try Data(entry.utf8).write(to: url)
+            }
+        } catch {
+            // Every write here used to be `try?` - a failed write and a working
+            // one looked identical, for the one component whose entire purpose is
+            // leaving a record (AUDIT-2026-07-24.md P1.5).
+            Log.diagnostics.error("enrollment.log write failed: \(String(describing: error), privacy: .public)")
         }
     }
 }

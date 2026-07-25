@@ -19,7 +19,7 @@ OpenAI shipped Voice mode in the ChatGPT desktop app. It is genuinely good, and 
 
 Hey Codex removes the keyboard. It sits in your menu bar, listens for a wake phrase, and presses that same shortcut for you. That is the entire tool.
 
-Nothing is recorded. Nothing is uploaded. No account, no signup, no config file.
+By default, nothing you say is recorded, and nothing ever leaves your Mac. No account, no signup. Your settings are saved in a small local file, not sent anywhere.
 
 ## Install
 
@@ -65,7 +65,7 @@ While a Voice session is open it stops listening entirely, so your conversation 
 
 "Hey Codex" is just the default. Pick **Use My Own Wake Phrase** from the menu, type whatever you want, and say it three times.
 
-Genuinely anything. "Hey Jarvis" if you have always wanted to. "Hey Computer" if you grew up on Star Trek. Your dog's name. Whatever makes you smile when it works.
+Most short phrases work. "Hey Jarvis" and "Hey Computer" are built in as presets if you want a starting point. When you press **Record It Three Times**, Hey Codex tests the phrase before you say anything and tells you if it looks unlikely to work. You can record it anyway if you want to try.
 
 Those three recordings never leave your Mac. They are there so the keyword can be built from how the speech model actually hears *your* voice, then the detector is tuned until all three of your takes fire. That is why recording beats picking from a list: a keyword guessed from spelling matches a generic speaker, not you.
 

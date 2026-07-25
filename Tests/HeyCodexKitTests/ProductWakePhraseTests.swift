@@ -69,5 +69,24 @@ final class ProductWakePhraseTests: XCTestCase {
         }
     }
 
+    /// P1.5: `guard let engine = try? WakeWordEngine(...)` collapses every
+    /// distinct missing-file case at the call site, so the specific filename must
+    /// survive into `localizedDescription` instead - the one place a collapsed
+    /// `try?` call still has a chance to show it.
+    func testMissingModelFileErrorNamesTheFile() {
+        let empty = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hey-codex-empty-model-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        XCTAssertThrowsError(try WakeWordEngine(modelDir: empty, keywordsFile: empty)) { error in
+            guard case WakeWordEngine.Error.missingModelFile(let name) = error else {
+                XCTFail("expected .missingModelFile, got \(error)"); return
+            }
+            XCTAssertEqual(name, "encoder-epoch-12-avg-2-chunk-16-left-64.onnx")
+            XCTAssertEqual(error.localizedDescription,
+                          "Missing wake-word model file: encoder-epoch-12-avg-2-chunk-16-left-64.onnx")
+        }
+    }
+
     private enum TestError: Error { case command(String) }
 }

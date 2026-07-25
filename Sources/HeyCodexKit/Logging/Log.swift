@@ -12,4 +12,9 @@ public enum Log {
     /// Microphone capture lifecycle — e.g. a mute→unmute restart that fails to
     /// re-acquire the input device (would otherwise leave the app silently deaf).
     public static let audio = Logger(subsystem: "com.heycodex.app", category: "audio")
+
+    /// Opt-in enrollment diagnostics (EnrollmentDiagnostics) that failed to write.
+    /// That component's entire purpose is leaving a record, so a write failure
+    /// silently swallowed by `try?` is worse than for most other errors here.
+    public static let diagnostics = Logger(subsystem: "com.heycodex.app", category: "diagnostics")
 }

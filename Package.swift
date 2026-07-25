@@ -71,6 +71,7 @@ let package = Package(
             sources: [
                 "CodexSettingsTests.swift",
                 "CaptureSessionTests.swift",
+                "EnrollmentDiagnosticsTests.swift",
                 "KeywordStoreTests.swift",
                 "ProductWakePhraseTests.swift",
                 "TestSupport.swift",

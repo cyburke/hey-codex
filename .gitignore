@@ -4,6 +4,15 @@
 Models/*
 # …but the hand-authored keyword file is a small tracked text artifact.
 !Models/keywords.txt
+# …and bpe.vocab is a small (12 KB) deterministic text derivative of the pinned
+# KWS model's bpe.model, produced by scripts/make-bpe-vocab.py. Tracking it
+# means a fresh clone can build without installing Python + sentencepiece.
+# A parent directory excluded by Models/* still hides files inside it even
+# after a "!" re-include, so the directory has to be un-ignored and then
+# everything else in it re-excluded, leaving only bpe.vocab tracked.
+!Models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/
+Models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/*
+!Models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/bpe.vocab
 Sources/CSherpaOnnx/sherpa-onnx.xcframework/
 Tests/HeyClaudeKitTests/Fixtures/*.wav
 *.onnx

@@ -6,6 +6,13 @@
 # universal2 static libonnxruntime.a into libsherpa-onnx.a.
 set -euo pipefail
 
+# Pinned below v1.13.4 on purpose: that release bundles ONNX Runtime 1.27.0,
+# which has an Apple Silicon SME convolution bug that makes KeywordSpotter
+# detect nothing, silently (no error, no crash - it just never fires).
+# Reproduced locally against the model's own test files and reported upstream
+# as k2-fsa/sherpa-onnx#3791; fixed in ORT 1.27.1. Do not bump this pin until a
+# sherpa-onnx release ships ORT >= 1.27.1 - check the release's bundled ORT
+# version first, not just the sherpa-onnx version number.
 VERSION="v1.13.2"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/Sources/CSherpaOnnx"
@@ -106,17 +113,32 @@ cp "$DEST/module.modulemap" "$XCF/macos-arm64_x86_64/Headers/module.modulemap"
 # Verification: nm on a 1100+ member archive crashes/truncates on macOS before
 # reaching the ort members, so we can't use nm "$LIB" | grep T _OrtGetApiBase.
 # Instead: find which ort .o defines the symbol (nm on individual objects works
-# fine), then confirm that member landed in the merged archive.
-# Verification: nm on a 1100+ member archive crashes on macOS before reaching
-# ort members. nm on individual ort .o files in the temp dir is also unreliable
-# (reason unclear). The one approach that reliably works: extract the defining
-# member from the merged archive with ar -x, then nm the extracted copy.
+# fine), then confirm that member landed in the merged archive. The one approach
+# that reliably works: extract the defining member from the merged archive with
+# ar -p, then nm the extracted copy.
 echo "==> Verifying _OrtGetApiBase is present in merged lib…"
 # Use ar -p to pipe the member content directly — avoids ar -x filesystem quirks
 ar -p "$LIB" 0000_onnxruntime_c_api.cc.o > "$TMP/capi_check.o" 2>/dev/null
 echo "    capi via ar-p size: $(wc -c < "$TMP/capi_check.o" | tr -d ' ')"
-echo "    capi via ar-p nm: $(nm "$TMP/capi_check.o" 2>/dev/null | grep OrtGetApiBase | head -3 || echo NOT FOUND)"
-if nm "$TMP/capi_check.o" 2>/dev/null | grep -qE " [TtWw] _OrtGetApiBase"; then
+# Capture nm's output ONCE into a variable, then test that variable, rather
+# than running nm a second time as the live left side of a pipe into
+# `grep -q`. This used to be two separate `nm ... | grep ...` pipelines, and
+# they visibly disagreed (CI: the loose `grep OrtGetApiBase` printed
+# "... T _OrtGetApiBase" one line above the strict check reporting FAILED on
+# the identical symbol). Root cause: `grep -q` exits the instant it finds a
+# match, which SIGPIPEs the still-writing producer on the far side of the pipe
+# (nm here emits ~1500 symbol lines); under `set -o pipefail` that non-zero
+# producer exit status - not grep's result - decided the `if`, even though
+# grep had already matched. Capturing to a variable with $(...) lets nm run to
+# completion (bash reads it to EOF for the substitution). The strict test below
+# then reads that variable via a here-string (`<<<`), not a live pipe, so
+# there is no second process for a `grep -q` early-exit to SIGPIPE - confirmed
+# by reproducing the original two-pipe bug locally, then re-running this exact
+# form 5x with no disagreement. Both prints derive from the one captured
+# $NM_OUT, so they cannot disagree again.
+NM_OUT="$(nm "$TMP/capi_check.o" 2>/dev/null)"
+echo "    capi via ar-p nm: $(grep OrtGetApiBase <<< "$NM_OUT" | head -3 || echo NOT FOUND)"
+if grep -qE " [TtWw] _OrtGetApiBase" <<< "$NM_OUT"; then
     echo "    OK"
 else
     echo "    FAILED: _OrtGetApiBase not defined in merged lib" >&2; exit 1

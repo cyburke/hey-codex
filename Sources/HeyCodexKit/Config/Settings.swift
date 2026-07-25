@@ -51,7 +51,6 @@ public struct Settings: Codable, Equatable, Sendable {
     public var mascotColorHex: String              // mascot body color, e.g. "#D87757"
     public var mascotIdleAnimations: Bool          // ambient idle mascot motion (blink/breathe/gestures)
     public var pushToTalkEnabled: Bool             // hold-to-talk hotkey active
-    public var pushToTalkKey: PushToTalkKey         // which key triggers it
     /// Displayed phrase that was locally enrolled into KeywordStore.
     public var wakePhrase: String
     /// Dedicated ChatGPT Voice shortcut posted by the helper after a wake.
@@ -79,7 +78,7 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init(projectDirectory: String = NSHomeDirectory(),
                 preferredTarget: LaunchTarget = .terminal(.terminalApp),
-                wakeKeywordsScore: Float = 2.0,
+                wakeKeywordsScore: Float = KeywordTuning.score,
                 wakeKeywordsThreshold: Float = 0.25,
                 cooldownSeconds: Double = 2.0,
                 maxUtteranceSeconds: Double = 30.0,
@@ -93,7 +92,6 @@ public struct Settings: Codable, Equatable, Sendable {
                 mascotColorHex: String = "#D87757",
                 mascotIdleAnimations: Bool = true,
                 pushToTalkEnabled: Bool = true,
-                pushToTalkKey: PushToTalkKey = .rightOption,
                 wakePhrase: String = "Hey Codex",
                 voiceShortcut: VoiceShortcut = .default,
                 voiceShortcutSetupCompleted: Bool = false,
@@ -118,7 +116,6 @@ public struct Settings: Codable, Equatable, Sendable {
         self.mascotColorHex = mascotColorHex
         self.mascotIdleAnimations = mascotIdleAnimations
         self.pushToTalkEnabled = pushToTalkEnabled
-        self.pushToTalkKey = pushToTalkKey
         self.wakePhrase = WakePhrase.normalize(wakePhrase) ?? "Hey Codex"
         self.voiceShortcut = voiceShortcut
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
@@ -170,8 +167,10 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? true
         self.pushToTalkEnabled = try container.decodeIfPresent(Bool.self, forKey: .pushToTalkEnabled)
             ?? true
-        self.pushToTalkKey = try container.decodeIfPresent(PushToTalkKey.self, forKey: .pushToTalkKey)
-            ?? .rightOption
+        // `pushToTalkKey` itself is gone (dead feature - no CGEventTap exists
+        // anywhere in the app), but old settings.json files on disk still carry
+        // it. CodingKeys below no longer has a case for it, so a stray
+        // "pushToTalkKey" object in existing JSON is simply ignored, not an error.
         self.wakePhrase = WakePhrase.normalize(try container.decodeIfPresent(String.self, forKey: .wakePhrase)
             ?? "Hey Codex") ?? "Hey Codex"
         self.voiceShortcut = try container.decodeIfPresent(VoiceShortcut.self, forKey: .voiceShortcut) ?? .default

@@ -84,17 +84,6 @@ public enum LaunchFailure: Error, Equatable, Sendable, LocalizedError {
         }
     }
 
-    /// Label for the `settingsURL` button.
-    public var settingsActionLabel: String? {
-        switch self {
-        case .terminalAutomationFailed(let k, _):
-            return k.needsAccessibility
-                ? "Open Accessibility Settings\u{2026}"
-                : "Open Automation Settings\u{2026}"
-        default:
-            return settingsURL == nil ? nil : "Open Automation Settings\u{2026}"
-        }
-    }
 
     /// The compact line the notch island shows during the failure beat.
     public var islandMessage: String {

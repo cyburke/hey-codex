@@ -12,8 +12,10 @@ import Foundation
 /// What does predict it is simply trying the phrase. macOS can speak any phrase
 /// with `say`, so the app synthesizes it and tests the real keyword against real
 /// audio in about a second. "Hey Xena" fails every threshold; "Hey Jarvis" fires at
-/// the strictest one. Better to say so while someone is still typing than after
-/// three recordings.
+/// the strictest one. `WakePhraseEnrollmentWindowController` runs this check right
+/// after the Record button is pressed and before any recording starts (not on
+/// every keystroke) - better to say so before burning three takes on a phrase
+/// that cannot work than after.
 public enum WakePhraseFitness {
     public enum Verdict: Equatable, Sendable {
         /// Worth recording.

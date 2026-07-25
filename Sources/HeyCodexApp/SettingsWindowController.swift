@@ -130,7 +130,7 @@ final class SettingsWindowController: NSWindowController {
 
         // Privacy ----------------------------------------------------------
         root.addArrangedSubview(sectionHeader("Privacy"))
-        root.addArrangedSubview(body("Everything you say is processed here on your Mac. Nothing is recorded, nothing is stored, and nothing is sent anywhere."))
+        root.addArrangedSubview(body("Everything you say is processed here on your Mac. By default, none of it is recorded, stored, or sent anywhere."))
         root.addArrangedSubview(hint("It uses the microphone to hear your phrase and Accessibility to press the hotkey. That is the whole list."))
 
         notice.font = .systemFont(ofSize: 12, weight: .medium)

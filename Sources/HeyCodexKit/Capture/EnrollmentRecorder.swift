@@ -11,6 +11,26 @@ import Foundation
 /// `@unchecked Sendable`: capture state is touched only on `AudioCapture`'s serial
 /// queue; `finished`/`audio` (read across the stop hop) are lock-guarded.
 public final class EnrollmentRecorder: @unchecked Sendable {
+    /// Target RMS for a normalized clip, and the peak a boost may never cross.
+    ///
+    /// Measured on this Mac (AUDIT-2026-07-24.md P1.1): the model's own reference
+    /// audio sits at RMS 0.047 (peak 0.53), while three real enrollment takes came
+    /// in at RMS 0.0052-0.0092 - 5x to 9x quieter - and a phrase that fires at
+    /// every threshold at normal level produced zero hits at every threshold once
+    /// scaled down to RMS 0.006. `targetRMS` matches the reference level.
+    /// `peakCeiling` matches the reference's own peak (0.53, rounded down to a
+    /// clean 0.5): RMS-matching alone was measured insufficient for one voice
+    /// whose crest factor (peak/RMS) was higher than the reference's ~11:1 - fully
+    /// closing the RMS gap on that clip would have driven its peak past 1.0 and
+    /// clipped it, distorting the exact transient the model needs.
+    public static let targetRMS: Float = 0.047
+    public static let peakCeiling: Float = 0.5
+    /// Below this, tell the user before they burn three takes on a phrase gain
+    /// alone will sink - it's roughly the quietest of the three measured real
+    /// takes (0.0052), so a clip at or under it is in the range already shown to
+    /// silence a phrase the model otherwise handles perfectly.
+    public static let lowLevelRMS: Float = 0.006
+
     private let vad: VoiceActivityDetector
     private let maxSeconds: Double
     private let onsetWindow: Int      // samples of recent audio used for onset detection
@@ -30,9 +50,15 @@ public final class EnrollmentRecorder: @unchecked Sendable {
 
     /// Start the mic and deliver the captured clip once the speaker endpoints (or
     /// the cap is hit). `onSpeechStart` fires the moment speech is detected (for a
-    /// "now talking" UI); `onClip` delivers the finished clip. Both run on the
-    /// audio queue — hop to main yourself.
+    /// "now talking" UI); `onClip` delivers the finished, gain-normalized clip.
+    /// `onLowLevel` reports the clip's RMS *before* normalization whenever it was
+    /// at or below `lowLevelRMS`, so a caller can warn about the mic itself rather
+    /// than let three quiet takes fail calibration with no explanation - this
+    /// parameter is additive (default nil) so it does not require touching every
+    /// existing call site. Both closures run on the audio queue — hop to main
+    /// yourself.
     public func record(onSpeechStart: (@Sendable () -> Void)? = nil,
+                       onLowLevel: (@Sendable (Float) -> Void)? = nil,
                        onClip: @escaping @Sendable ([Float]) -> Void) throws {
         let capture = CaptureSession(prerollSeconds: 1.5, postFireMaxSeconds: maxSeconds,
                                      vad: vad, onUtterance: { [weak self] clip in
@@ -41,7 +67,9 @@ public final class EnrollmentRecorder: @unchecked Sendable {
             let already = self.finished; self.finished = true
             self.lock.unlock()
             guard !already else { return }
-            onClip(clip)
+            let level = AudioSamples.rms(clip)
+            if level <= Self.lowLevelRMS { onLowLevel?(level) }
+            onClip(AudioSamples.normalized(clip, targetRMS: Self.targetRMS, peakCeiling: Self.peakCeiling))
             DispatchQueue.main.async { [weak self] in self?.stop() }
         })
         let vad = self.vad
