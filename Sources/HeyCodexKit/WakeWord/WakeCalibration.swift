@@ -50,7 +50,10 @@ public struct WakeCalibration {
     public static func keywordLine(tokens: String,
                                    score: Float = KeywordTuning.score,
                                    threshold: Float? = nil) -> String {
-        var line = "\(tokens) :\(String(format: "%.1f", score))"
+        // Two decimals, not one: the measured score is 1.25 and "%.1f" wrote it
+        // out as 1.2, silently discarding the value TUNING-2026-07-25.md exists to
+        // justify. A persisted keyword line must carry the number the app decided on.
+        var line = "\(tokens) :\(String(format: "%.2f", score))"
         if let threshold { line += " #\(String(format: "%.2f", threshold))" }
         return line
     }

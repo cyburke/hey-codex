@@ -11,6 +11,11 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     private let phraseField: NSTextField
     private let progress = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
+    /// Real, honest activity feedback: spins whenever work is happening off the
+    /// main thread (the fitness check, tuning) so a multi-second stage never
+    /// reads as a hang. Indeterminate only - there is no percentage to compute
+    /// for either stage, so this never fakes one (AUDIT-2026-07-24.md).
+    private let spinner = NSProgressIndicator()
     private let startButton = NSButton(title: "Record It Three Times", target: nil, action: nil)
     private var recorder: EnrollmentRecorder?
     private var samples: [WakeEnrollment.Sample] = []
@@ -56,7 +61,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
 
         titleLabel.font = .systemFont(ofSize: 19, weight: .semibold)
         root.addArrangedSubview(titleLabel)
-        root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Type anything you like, then say it three times so Hey Codex learns how you say it. By default, those recordings are used here on your Mac and then discarded."))
+        root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Type a phrase, then say it three times so Hey Codex learns your voice. Recordings stay on this Mac and are discarded afterward."))
         let presets = NSPopUpButton(frame: .zero, pullsDown: false)
         presets.addItems(withTitles: WakePhrase.presets)
         presets.addItem(withTitle: "Custom…")
@@ -71,16 +76,24 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         phraseRow.spacing = 10
         root.addArrangedSubview(phraseRow)
         detail.textColor = .secondaryLabelColor
-        detail.stringValue = "Anything short works: “Hey Jarvis”, “Wake Up Codex”, your own name for it. Two or three words treat you best, since single words tend to go off by accident."
+        detail.stringValue = "Short phrases work best: “Hey Jarvis”, “Wake Up Codex”, or your own name. Two or three words beats one word, since single words fire by accident more."
         detail.maximumNumberOfLines = 0
         root.addArrangedSubview(detail)
         progress.font = .systemFont(ofSize: 14, weight: .medium)
         progress.maximumNumberOfLines = 0
-        progress.preferredMaxLayoutWidth = 430
+        progress.preferredMaxLayoutWidth = 400
         progress.lineBreakMode = .byWordWrapping
-        progress.widthAnchor.constraint(equalToConstant: 430).isActive = true
+        progress.widthAnchor.constraint(equalToConstant: 400).isActive = true
         progress.stringValue = "Ready when you are"
-        root.addArrangedSubview(progress)
+        spinner.style = .spinning
+        spinner.isIndeterminate = true
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        let progressRow = NSStackView(views: [progress, spinner])
+        progressRow.orientation = .horizontal
+        progressRow.alignment = .firstBaseline
+        progressRow.spacing = 8
+        root.addArrangedSubview(progressRow)
         startButton.target = self
         startButton.action = #selector(start)
         // Default button: macOS tints it with the accent colour and binds Return.
@@ -130,7 +143,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         startButton.title = pending ? "Record “\(typed)” Three Times" : "Record It Three Times"
         progress.textColor = pending ? .controlAccentColor : .labelColor
         progress.stringValue = pending
-            ? "“\(typed)” is not live yet. Record it three times to make the switch."
+            ? "“\(typed)” isn’t live yet. Record it three times to switch."
             : "Ready when you are"
     }
 
@@ -140,12 +153,18 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             return
         }
         if !WakePhrase.isRecommended(phrase) {
-            detail.stringValue = "Single words tend to fire when you did not mean them. You can carry on, but two or three words will treat you better."
+            detail.stringValue = "Single words fire by accident more often. Two or three words work better, but you can carry on."
         }
         phraseField.isEnabled = false
         startButton.isEnabled = false
         samples.removeAll()
         checkFitness(of: phrase)
+    }
+
+    /// Start/stop the spinner together with the busy state it represents, so
+    /// there is exactly one place that can leave it spinning forever by mistake.
+    private func setBusy(_ busy: Bool) {
+        if busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
     }
 
     /// Try the phrase before asking anyone to say it three times, and say what
@@ -165,18 +184,25 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         }
         let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
         progress.textColor = .secondaryLabelColor
-        progress.stringValue = "Checking that phrase…"
+        // The negatives this check screens against are cached on disk after the
+        // first run ever (see SynthesizedSpeech), so only the genuinely slow
+        // first run gets told it is slow - every run after is honestly quick.
+        progress.stringValue = SynthesizedSpeech.negativesCached
+            ? "Checking that phrase…"
+            : "Getting set up, one moment…"
+        setBusy(true)
 
         Task.detached { [weak self] in
+            let cache = WakeEngineCache(modelDir: kwsModel)
             let verdict = WakePhraseFitness.check(
                 tokens: KeywordTokenizer.tokenize(phrase, modelDir: kwsModel) ?? "",
                 spoken: SynthesizedSpeech.samples(of: phrase),
                 negatives: SynthesizedSpeech.falseAlarmClips(),
-                fires: { line, threshold, audio in
-                    Self.fires(line, threshold: threshold, audio: audio, modelDir: kwsModel)
-                })
+                thresholds: KeywordTuning.fitnessCheckThresholds,
+                fires: { line, threshold, audio in cache.fires(line, threshold: threshold, audio: audio) })
             await MainActor.run {
                 guard let self else { return }
+                self.setBusy(false)
                 self.lastFitnessVerdict = verdict
                 switch verdict {
                 case .good:
@@ -188,11 +214,11 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                     // spelling of the same phrase may work even when the full
                     // phrase does not.
                     let reason = WakePhraseFitness.startsWithUnspellableLetter(phrase)
-                        ? " This model can't spell words that start with X or Z, so there is nothing there for it to hear."
+                        ? " This model can’t spell words starting with X or Z."
                         : ""
-                    self.warn("A test run of “\(phrase)” did not register, so it may not work well.\(reason) Your own voice is what counts, though. Record it and see.")
+                    self.warn("“\(phrase)” didn’t register in a quick test.\(reason) Your voice may still work. Record it and see.")
                 case .tooCommon:
-                    self.warn("“\(phrase)” sounds close to ordinary conversation, so it might open Voice while you are talking to someone else. Record it anyway if you want to try.")
+                    self.warn("“\(phrase)” sounds like ordinary conversation. It might open Voice while you’re just talking.")
                 }
             }
         }
@@ -202,8 +228,8 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     private func warn(_ message: String) {
         guard !acknowledgedRisk else { beginRecording(); return }
         acknowledgedRisk = true
-        progress.textColor = .systemOrange
-        progress.stringValue = message
+        progress.attributedStringValue = hint(message + " Or press Record It Anyway.",
+                                              bold: ["Record It Anyway"], color: .systemOrange)
         phraseField.isEnabled = true
         startButton.isEnabled = true
         startButton.title = "Record It Anyway"
@@ -217,18 +243,29 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         recordNext()
     }
 
-    /// One keyword line, one threshold, one clip. Shared by the fitness check and
-    /// calibration so both measure the phrase exactly the way the app will run it.
-    nonisolated private static func fires(_ line: String, threshold: Float,
-                              audio: [Float], modelDir: URL) -> Bool {
-        let file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("heycodex-cal-\(UUID().uuidString).txt")
-        defer { try? FileManager.default.removeItem(at: file) }
-        try? (line + "\n").write(to: file, atomically: true, encoding: .utf8)
-        guard let engine = try? WakeWordEngine(modelDir: modelDir, keywordsFile: file,
-                                              keywordsThreshold: threshold)
-        else { return false }
-        return engine.detects(in: audio)
+    /// Builds hint text with named buttons set in bold, so the reader can tell
+    /// an instruction from the button name it refers to. Same pattern as
+    /// `SetupWindowController.hint(_:bold:)`, with a color parameter added
+    /// since this window's progress label changes color per state (warning,
+    /// success, error) and an attributed string carries its own color per run,
+    /// so setting `.textColor` afterward would not touch it.
+    private func hint(_ text: String, bold: [String], color: NSColor) -> NSAttributedString {
+        let attributed = NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: color,
+        ])
+        for phrase in bold {
+            var range = (text as NSString).range(of: phrase)
+            while range.location != NSNotFound {
+                attributed.addAttribute(.font,
+                                        value: NSFont.systemFont(ofSize: 14, weight: .bold),
+                                        range: range)
+                let next = NSRange(location: range.location + range.length,
+                                   length: (text as NSString).length - range.location - range.length)
+                range = (text as NSString).range(of: phrase, options: [], range: next)
+            }
+        }
+        return attributed
     }
 
     private func recordNext() {
@@ -284,8 +321,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                     self.progress.stringValue = "Got it. \(self.samples.count) of 3 recorded"
                 } else {
                     self.progress.textColor = .systemOrange
-                    self.progress.stringValue =
-                        "Did not quite catch that. Say the whole phrase at a normal pace, then pause for a moment."
+                    self.progress.stringValue = "Didn’t quite catch that. Say the phrase at a normal pace, then pause."
                 }
             }
             try? await Task.sleep(for: .milliseconds(500))
@@ -299,21 +335,33 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         let phrase = phraseField.stringValue
 
         progress.textColor = .labelColor
-        progress.stringValue = "Tuning it to your voice…"
+        progress.stringValue = SynthesizedSpeech.negativesCached
+            ? "Tuning it to your voice…"
+            : "Getting set up, one moment…"
+        setBusy(true)
         let captured = samples.map(\.audio)
 
         Task.detached { [weak self] in
+            // One engine per (line, threshold), reused across every clip tested
+            // against it, instead of a fresh engine per clip - see
+            // WakeEngineCache for the measurement and the reuse-safety check.
+            let cache = WakeEngineCache(modelDir: kwsModel)
             let calibration = WakeCalibration(fires: { line, threshold, audio in
-                Self.fires(line, threshold: threshold, audio: audio, modelDir: kwsModel)
+                cache.fires(line, threshold: threshold, audio: audio)
             })
             let tokenize: (String) -> String? = { KeywordTokenizer.tokenize($0, modelDir: kwsModel) }
             // Screened once, against every candidate: MANDATORY SAFETY per
             // AUDIT-2026-07-24.md - nothing gets armed without first proving it
             // stays quiet on ordinary speech.
             let negatives = SynthesizedSpeech.falseAlarmClips()
-            let search = WakeCandidateSearch.search(phrase: phrase, samples: captured,
-                                                    negatives: negatives, tokenize: tokenize,
-                                                    calibration: calibration)
+            let search = WakeCandidateSearch.search(
+                phrase: phrase, samples: captured, negatives: negatives, tokenize: tokenize,
+                calibration: calibration,
+                onCandidate: { candidate in
+                    Task { @MainActor [weak self] in
+                        self?.progress.stringValue = "Tuning “\(candidate)”…"
+                    }
+                })
 
             // Diagnostics always have *something* to report against, even when no
             // candidate became usable: the phrase's own spelling if it tokenizes,
@@ -354,10 +402,11 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
 
             await MainActor.run {
                 guard let self else { return }
+                self.setBusy(false)
                 guard let search else {
                     self.progress.textColor = .systemOrange
                     self.progress.stringValue = diagnosticTokens.isEmpty
-                        ? "This model cannot spell that phrase. Try ordinary words, or a different phrase."
+                        ? "This model can’t spell that phrase. Try different words."
                         : self.failureMessage(firedCount: failedFiredCount)
                     self.phraseField.isEnabled = true
                     self.startButton.isEnabled = true
@@ -392,7 +441,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         if lastFitnessVerdict == .cannotSpot {
             return "This phrase looks like the problem, not your microphone.\nTry a different phrase."
         }
-        return "None of the three recordings triggered the phrase.\nCheck the right microphone is selected, then try again."
+        return "None of the three recordings triggered it.\nCheck your microphone, then try again."
     }
 
     /// Confirmation belongs in this window. An NSAlert here was the only modal in
@@ -404,16 +453,16 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     private func showSuccess(phrase: String, candidate: WakeCandidateSearch.Candidate,
                              result: WakeCalibration.Result) {
         didSucceed = true
-        titleLabel.stringValue = "“\(phrase)” is your wake phrase 🎉"
+        titleLabel.stringValue = "“\(phrase)” is your wake phrase"
         var lines = ["Try it now: say “\(phrase)” and ChatGPT Voice should open."]
         if !candidate.isFullPhrase {
-            lines.append("To make it reliable, Hey Codex is actually listening for just “\(candidate.phrase)”, not the whole phrase. Say that part clearly and it will still open.")
+            lines.append("For reliability, Hey Codex actually listens for “\(candidate.phrase)”, not the full phrase. Say that part clearly.")
         }
         if !result.allFired {
-            lines.append("Two of your three takes matched, which is enough. Re-record if it feels unreliable.")
+            lines.append("Two of three takes matched. That’s enough, but re-record if it feels unreliable.")
         }
         if result.isMarginal {
-            lines.append("It needed high sensitivity, so it may occasionally trigger by accident. A longer or more distinctive phrase usually matches more cleanly.")
+            lines.append("It needed high sensitivity, so it may trigger by accident sometimes. A longer or more distinctive phrase usually works better.")
         }
         detail.stringValue = lines.joined(separator: "\n\n")
         progress.textColor = .systemGreen
@@ -434,7 +483,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             try controller.resetWakePhraseToDefault()
             phraseField.stringValue = "Hey Codex"
             titleLabel.stringValue = "Back to “Hey Codex”"
-            detail.stringValue = "Your recorded phrase is gone and the built-in “Hey Codex” is listening again."
+            detail.stringValue = "Your recorded phrase is gone. The built-in “Hey Codex” is listening again."
             progress.textColor = .systemGreen
             progress.stringValue = "Saved."
             didSucceed = true

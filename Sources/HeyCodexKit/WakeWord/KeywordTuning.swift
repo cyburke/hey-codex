@@ -40,4 +40,27 @@ public enum KeywordTuning {
     /// Thresholds tried during enrollment, strictest first. Stops at 0.08 to
     /// stay inside the range the sensitivity control allows.
     public static let calibrationThresholds: [Float] = [0.25, 0.20, 0.15, 0.12, 0.10, 0.08]
+
+    /// Thresholds used by `WakePhraseFitness.check`, the pre-record "does this
+    /// ever fire" screen. That check only needs a yes/no answer, not the exact
+    /// threshold - calibration does that later against the user's real voice.
+    /// Testing the strictest and loosest thresholds in `calibrationThresholds`
+    /// is enough to answer it: if the phrase fires even at the strictest
+    /// setting it is unambiguously fine, and if it never fires even at the
+    /// loosest it is unambiguously not going to work.
+    ///
+    /// CORRECTION from an earlier pass at this file: `check()`'s own sweep
+    /// (`thresholds.contains(where:)`) already short-circuits on the first
+    /// fire, so a phrase that passes was already cheap - one or two engine
+    /// constructions, not six. Trimming the sweep only removes work that was
+    /// happening for phrases about to be REJECTED anyway, so this is a real
+    /// but smaller win than first assumed, and it is not what produced the
+    /// 2-3s the user saw on phrases that worked (AUDIT-2026-07-24.md
+    /// enrollment-latency work; see also `WakeEngineCache`, which is the
+    /// bigger lever for the reject path, and `SynthesizedSpeech`'s disk cache,
+    /// which is the bigger lever overall).
+    public static let fitnessCheckThresholds: [Float] = [
+        calibrationThresholds.first ?? threshold,
+        calibrationThresholds.last ?? threshold,
+    ]
 }

@@ -475,6 +475,195 @@ func probePathParity(_ phrase: String) -> Bool {
     }
 }
 
+/// Where does enrollment's wall-clock time actually go?
+///
+/// Reported symptoms: "checking that phrase" takes 2-3s before recording starts,
+/// and "tuning your voice" freezes for 6s or more with no feedback. This measures
+/// the parts rather than guessing which one is expensive.
+/// Run: `swift run hey-codex-selftest timing`
+func probeTiming() -> Bool {
+    run("enroll.timingBreakdown") { c in
+        func ms(_ block: () -> Void) -> Double {
+            let t0 = DispatchTime.now().uptimeNanoseconds
+            block()
+            return Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+        }
+
+        // --- (a)/(b) Pre-record check, measured FIRST and before anything
+        // else in this function touches `falseAlarmClips()` - once anything
+        // does, the disk cache exists for the rest of the run and a later
+        // "cold" measurement would be lying. Whichever state this process
+        // finds on disk on entry decides cold vs. warm, so two separate
+        // invocations of `swift run hey-codex-selftest timing` give one real
+        // cold number and one real warm number; `timing-cold` forces a clean
+        // cold run on demand by deleting the cache first.
+        let wasCold = !SynthesizedSpeech.negativesCached
+        let cache = WakeEngineCache(modelDir: kwsDir)
+        let checkTime = ms {
+            _ = WakePhraseFitness.check(
+                tokens: "\u{2581}HE Y \u{2581}JA R VI S",
+                spoken: SynthesizedSpeech.samples(of: "hey jarvis"),
+                negatives: SynthesizedSpeech.falseAlarmClips(),
+                thresholds: KeywordTuning.fitnessCheckThresholds,
+                fires: { line, threshold, audio in cache.fires(line, threshold: threshold, audio: audio) })
+        }
+        print(String(format: "  PRE-RECORD CHECK (%@ cache, cached negatives now on disk for next run): %.0f ms",
+                     wasCold ? "COLD" : "WARM", checkTime))
+
+        // (b) A second call in the same process: RAM-memoized negatives, so
+        // this isolates what the disk cache alone is worth vs. the in-memory
+        // memoization on top of it.
+        let checkTimeMemoized = ms {
+            _ = WakePhraseFitness.check(
+                tokens: "\u{2581}HE Y \u{2581}JA R VI S",
+                spoken: SynthesizedSpeech.samples(of: "hey jarvis"),
+                negatives: SynthesizedSpeech.falseAlarmClips(),
+                thresholds: KeywordTuning.fitnessCheckThresholds,
+                fires: { line, threshold, audio in cache.fires(line, threshold: threshold, audio: audio) })
+        }
+        print(String(format: "  PRE-RECORD CHECK (same process, RAM-memoized negatives): %.0f ms",
+                     checkTimeMemoized))
+
+        // --- Component micro-benchmarks, for context on where the above
+        // numbers go (cache is warm for these by construction now, since the
+        // block above already populated it - that is fine, they are not
+        // trying to measure cold vs. warm, just the pieces).
+        let kwFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tm-\(UUID().uuidString).txt")
+        try? ("\u{2581}HE Y \u{2581}CO DE X :1.2\n").write(to: kwFile, atomically: true, encoding: .utf8)
+
+        var engine: WakeWordEngine?
+        let build = ms { engine = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: kwFile,
+                                                     keywordsThreshold: 0.25) }
+        print(String(format: "  engine construction (loads 3 onnx models): %.0f ms", build))
+
+        guard let engine else { c.fail("engine failed"); return }
+        let clip = (try? AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/0.wav"))) ?? []
+        let detect = ms { _ = engine.detects(in: clip) }
+        print(String(format: "  detects() on one clip, engine already built: %.0f ms", detect))
+
+        var one: [Float]?
+        let synth1 = ms { one = SynthesizedSpeech.samples(of: "hey jarvis") }
+        print(String(format: "  synthesize ONE phrase via say+afconvert: %.0f ms  (%d samples)",
+                     synth1, one?.count ?? 0))
+
+        // (c) The full post-recording tune: WakeCandidateSearch.search across
+        // three synthesized "takes" of "hey codex", engine-cache reused, vs.
+        // the old fresh-engine-per-call baseline, so the collapse from 18
+        // constructions to 6 is visible as a number, not just asserted.
+        let takes = ["hey codex", "hey codex", "hey codex"].compactMap(SynthesizedSpeech.samples(of:))
+        c.assertEqual(takes.count, 3, "all three synthesized takes for the tune timing must exist")
+        let tuneCache = WakeEngineCache(modelDir: kwsDir)
+        let tuneCalibration = WakeCalibration(fires: { line, threshold, audio in
+            tuneCache.fires(line, threshold: threshold, audio: audio)
+        })
+        let tuneTokenize: (String) -> String? = { KeywordTokenizer.tokenize($0, modelDir: kwsDir) }
+        let tuneNegatives = SynthesizedSpeech.falseAlarmClips()
+        let tuneTime = ms {
+            _ = WakeCandidateSearch.search(phrase: "hey codex", samples: takes,
+                                           negatives: tuneNegatives, tokenize: tuneTokenize,
+                                           calibration: tuneCalibration)
+        }
+        print(String(format: "  FULL POST-RECORDING TUNE (engine cache reused, negatives already cached): %.0f ms",
+                     tuneTime))
+
+        final class Counter: @unchecked Sendable { var value = 0 }
+        let freshConstructions = Counter()
+        let freshFires: @Sendable (String, Float, [Float]) -> Bool = { line, threshold, audio in
+            freshConstructions.value += 1
+            let f = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tm3-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: f) }
+            try? (line + "\n").write(to: f, atomically: true, encoding: .utf8)
+            guard let e = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: f,
+                                             keywordsThreshold: threshold) else { return false }
+            return e.detects(in: audio)
+        }
+        let freshCalibration = WakeCalibration(fires: freshFires)
+        let tuneTimeBaseline = ms {
+            _ = WakeCandidateSearch.search(phrase: "hey codex", samples: takes,
+                                           negatives: tuneNegatives, tokenize: tuneTokenize,
+                                           calibration: freshCalibration)
+        }
+        print(String(format: "  FULL POST-RECORDING TUNE (old baseline: fresh engine per clip, %d constructions): %.0f ms",
+                     freshConstructions.value, tuneTimeBaseline))
+
+        // --- Engine reuse safety ---
+        //
+        // BLOCKING per review: the doc comment on `detects(in:)` claiming
+        // `reset()` makes the engine safely reusable had never actually been
+        // exercised - every call site in the whole tree built one engine per
+        // `detects()` call, so reuse across multiple clips was unverified
+        // behaviour of the vendored C library (SherpaOnnxResetKeywordStream),
+        // not of our Swift wrapper. This does not trust the comment: it runs
+        // the same (line, threshold) over 7 real/synthesized clips two ways -
+        // fresh engine per clip (ground truth, order cannot matter) vs one
+        // engine reused across the whole clip set - and requires bit-for-bit
+        // identical fired/not-fired results. It also runs the reused-engine
+        // pass a SECOND time in reverse clip order, on a fresh cache instance,
+        // specifically to catch a leak that only shows up depending on what
+        // came before a given clip (a leak that happened to be symmetric in
+        // forward order could hide otherwise).
+        let reuseClips: [[Float]] = [
+            (try? AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/0.wav"))),
+            (try? AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/1.wav"))),
+            SynthesizedSpeech.samples(of: "hey codex"),
+            SynthesizedSpeech.samples(of: "hey jarvis"),
+            SynthesizedSpeech.samples(of: "the weather today is sunny and warm"),
+            SynthesizedSpeech.samples(of: "hey there, how are you doing"),
+            SynthesizedSpeech.samples(of: "let me check the code for you and get back"),
+        ].compactMap { $0 }
+        c.assert(reuseClips.count == 7, "expected 7 real/synthesized clips for the reuse check, got \(reuseClips.count)")
+        guard let reuseTokens = KeywordTokenizer.tokenize("hey codex", modelDir: kwsDir) else {
+            c.fail("could not tokenize 'hey codex' for the reuse check")
+            return
+        }
+
+        // Ground truth: fresh engine per call. Order cannot affect this, since
+        // nothing is shared between calls.
+        var baseline: [String: Bool] = [:]
+        for threshold in KeywordTuning.calibrationThresholds {
+            let line = WakeCalibration.keywordLine(tokens: reuseTokens, threshold: threshold)
+            for (index, clip) in reuseClips.enumerated() {
+                baseline["\(threshold)|\(index)"] = freshFires(line, threshold, clip)
+            }
+        }
+
+        func reusedPass(order: [Int]) -> Int {
+            let cache = WakeEngineCache(modelDir: kwsDir)
+            var mismatches = 0
+            for threshold in KeywordTuning.calibrationThresholds {
+                let line = WakeCalibration.keywordLine(tokens: reuseTokens, threshold: threshold)
+                for index in order {
+                    let reused = cache.fires(line, threshold: threshold, audio: reuseClips[index])
+                    if reused != baseline["\(threshold)|\(index)"] { mismatches += 1 }
+                }
+            }
+            return mismatches
+        }
+
+        let forwardOrder = Array(reuseClips.indices)
+        let reverseOrder = Array(reuseClips.indices.reversed())
+        let forwardMismatches = reusedPass(order: forwardOrder)
+        let reverseMismatches = reusedPass(order: reverseOrder)
+        c.assert(forwardMismatches == 0,
+                "engine reuse (forward order) must match fresh-engine-per-call - got \(forwardMismatches) mismatches")
+        c.assert(reverseMismatches == 0,
+                "engine reuse (reverse order) must match fresh-engine-per-call - got \(reverseMismatches) mismatches; an order-dependent leak would show up here even if forward order looked clean")
+        print("  ENGINE REUSE SAFETY: \(reuseClips.count) clips x \(KeywordTuning.calibrationThresholds.count) thresholds, forward=\(forwardMismatches) reverse=\(reverseMismatches) mismatches vs. fresh-engine-per-call")
+
+        // --- The duplicate falseAlarmClips() call (review point 3):
+        // checkFitness and finishEnrollment each call it independently. Before
+        // this fix that meant synthesizing the same 4 sentences twice per
+        // enrollment attempt; measure that specific pair of calls in
+        // isolation so its contribution is visible on its own.
+        let firstCall = ms { _ = SynthesizedSpeech.falseAlarmClips() }
+        let secondCall = ms { _ = SynthesizedSpeech.falseAlarmClips() }
+        print(String(format: "  DUPLICATE falseAlarmClips() CALL (checkFitness then finishEnrollment): first=%.0f ms second=%.0f ms",
+                     firstCall, secondCall))
+    }
+}
+
 func probeSynthFidelity() -> Bool {
     run("keyword.synthFidelity") { c in
         // The spotter is a 3.3M model and a poor transcriber; read the same clip
@@ -1369,6 +1558,18 @@ func main() -> Int32 {
     if requested == "path-parity" {
         let phrase = CommandLine.arguments.dropFirst(2).joined(separator: " ")
         return probePathParity(phrase.isEmpty ? "hey codex" : phrase) ? 0 : 1
+    }
+    if requested == "timing" {
+        return probeTiming() ? 0 : 1
+    }
+    if requested == "timing-cold" {
+        try? FileManager.default.removeItem(at: SynthesizedSpeech.cacheDirectory)
+        return probeTiming() ? 0 : 1
+    }
+    if requested == "clear-negatives-cache" {
+        try? FileManager.default.removeItem(at: SynthesizedSpeech.cacheDirectory)
+        print("cleared \(SynthesizedSpeech.cacheDirectory.path)")
+        return 0
     }
     if requested == "synth-fidelity" {
         return probeSynthFidelity() ? 0 : 1

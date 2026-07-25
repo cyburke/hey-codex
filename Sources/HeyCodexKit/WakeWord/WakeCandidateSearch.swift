@@ -105,13 +105,19 @@ public enum WakeCandidateSearch {
     /// usable. `tokenize` is injected (rather than a model directory taken
     /// directly) so this is testable without the model, the same way
     /// `WakeCalibration.fires` is injected.
+    ///   - onCandidate: called with each candidate phrase right before it is
+    ///     tried, so a caller can show progress on a step that can run several
+    ///     seconds (enrollment-latency work, AUDIT-2026-07-24.md). Optional and
+    ///     defaulted so existing callers, including every test, are unaffected.
     public static func search(phrase: String,
                               samples: [[Float]],
                               negatives: [[Float]],
                               tokenize: (String) -> String?,
-                              calibration: WakeCalibration) -> Result? {
+                              calibration: WakeCalibration,
+                              onCandidate: ((String) -> Void)? = nil) -> Result? {
         let phrases = candidatePhrases(for: phrase)
         for candidatePhrase in phrases {
+            onCandidate?(candidatePhrase)
             guard let tokens = tokenize(candidatePhrase) else { continue }
             guard !failsFalseAlarmScreen(tokens: tokens, phrase: candidatePhrase,
                                          negatives: negatives, calibration: calibration)

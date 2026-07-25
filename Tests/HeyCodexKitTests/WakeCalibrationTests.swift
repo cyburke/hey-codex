@@ -39,14 +39,21 @@ final class WakeCalibrationTests: XCTestCase {
 
     func test_keywordLineCarriesTheScore() {
         XCTAssertEqual(WakeCalibration.keywordLine(tokens: tokens, score: 1.5),
-                       "\u{2581}HE Y \u{2581}CO DE X :1.5")
+                       "\u{2581}HE Y \u{2581}CO DE X :1.50")
+    }
+
+    /// The calibrated score is 1.25, and one decimal place silently wrote it out as
+    /// 1.2 - discarding the value the tuning measurement exists to establish.
+    func test_keywordLineKeepsTwoDecimalsOfScore() {
+        XCTAssertEqual(WakeCalibration.keywordLine(tokens: tokens, score: KeywordTuning.score),
+                       "\u{2581}HE Y \u{2581}CO DE X :1.25")
     }
 
     /// The per-keyword threshold form exists for when more than one keyword is
     /// armed, where a global threshold cannot serve both.
     func test_keywordLineCanCarryAThresholdToo() {
         XCTAssertEqual(WakeCalibration.keywordLine(tokens: tokens, score: 1.5, threshold: 0.2),
-                       "\u{2581}HE Y \u{2581}CO DE X :1.5 #0.20")
+                       "\u{2581}HE Y \u{2581}CO DE X :1.50 #0.20")
     }
 
     /// What gets persisted must not pin the threshold, or the sensitivity control
