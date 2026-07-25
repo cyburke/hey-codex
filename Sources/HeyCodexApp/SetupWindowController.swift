@@ -236,11 +236,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             """
         hotkeyStack.isHidden = false
         loadHotkeyFields()
-        detail.stringValue = """
-            ✨  “Hey Codex” not your style? Use absolutely any phrase you like. “Hey Jarvis”, \
-            “Hey Computer”, your dog's name, whatever makes you smile. Pick Use My Own Wake \
-            Phrase from the menu bar, say it three times, and it is yours.
-            """
+        detail.attributedStringValue = hint("""
+            ✨  Want a different phrase?
+
+            Use anything you like: “Hey Jarvis”, “Hey Computer”, your dog's name.
+            From the menu bar icon, choose Use My Own Wake Phrase, say it three times, and it is yours.
+            """, bold: ["Use My Own Wake Phrase"])
         primary.title = "Save and Test"
         primary.target = self
         primary.action = #selector(runTest)
@@ -327,6 +328,28 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         NSWorkspace.shared.open(URL(string: "https://openai.com/chatgpt/download/")!)
     }
 
+    /// Builds hint text with menu item names set in bold. Without it a sentence
+    /// like "Pick Use My Own Wake Phrase from the menu" gives the reader no way
+    /// to tell where the instruction stops and the menu item starts.
+    private func hint(_ text: String, bold: [String]) -> NSAttributedString {
+        let attributed = NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        for phrase in bold {
+            var range = (text as NSString).range(of: phrase)
+            while range.location != NSNotFound {
+                attributed.addAttribute(.font,
+                                        value: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                                        range: range)
+                let next = NSRange(location: range.location + range.length,
+                                   length: (text as NSString).length - range.location - range.length)
+                range = (text as NSString).range(of: phrase, options: [], range: next)
+            }
+        }
+        return attributed
+    }
+
     private func loadHotkeyFields() {
         let shortcut = controller.settings.voiceShortcut
         control.state = shortcut.control ? .on : .off
@@ -359,14 +382,18 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             case .success:
                 self.heading.stringValue = "You're all set 🎉"
                 self.body.stringValue = """
-                    ChatGPT Voice should have just opened. Now try it the real way: say \
-                    “\(self.controller.settings.wakePhrase)” out loud from any app at all.
+                    ChatGPT Voice should have just opened. Now try it for real: say \
+                    “\(self.controller.settings.wakePhrase)” out loud from any app.
 
-                    🔍  Look for the small icon in your menu bar, that is home now
-                    ✨  Change your phrase, adjust sensitivity, or run this test again from there
+                    🔍  Look for the small icon in your menu bar. That is home now.
+                    ✨  Change your phrase, tune sensitivity, or re-test from there.
                     🙌  That is everything. Go talk to it.
                     """
-                self.detail.stringValue = "Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString) after all. Check it in ChatGPT, correct it above, and test again."
+                self.detail.attributedStringValue = self.hint("""
+                    Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString) after all.
+
+                    Check it in ChatGPT under Settings, then Voice. Correct it above and test again.
+                    """, bold: ["Settings", "Voice"])
                 self.primary.title = "Test Again"
                 self.hotkeyStack.isHidden = false
                 self.secondary.title = "Done"
