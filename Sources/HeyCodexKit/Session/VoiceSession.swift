@@ -6,8 +6,8 @@ import Foundation
 /// tests share one path.
 public final class VoiceSession {
     /// What one fired utterance resolved to, surfaced for observability. Lets the
-    /// app log exactly what was heard and how it routed — the seam needed to
-    /// diagnose mis-routing (the live transcript is the only thing the unit
+    /// app log exactly what was heard and how it routed. That's the seam needed
+    /// to diagnose mis-routing (the live transcript is the only thing the unit
     /// tests and synthetic fixtures cannot reproduce).
     public struct Outcome: Sendable {
         public let transcript: String          // raw ASR text of the clip
@@ -16,7 +16,7 @@ public final class VoiceSession {
     }
 
     // All four callbacks fire inside `handle`, which runs on the AudioCapture
-    // serial queue — never the main actor. They are therefore `@Sendable`: a
+    // serial queue, never the main actor. They are therefore `@Sendable`: a
     // non-Sendable closure created in a `@MainActor` scope (top-level `main`, or
     // an `@MainActor` method) inherits main-actor isolation, and macOS 26 hard-
     // traps (`_dispatch_assert_queue_fail`) the moment such a closure is invoked
@@ -69,35 +69,5 @@ public final class VoiceSession {
         } else {
             observe?(Outcome(transcript: transcript, strippedCommand: command, resolved: nil))
         }
-    }
-
-    /// Handle a push-to-talk utterance. Unlike the wake path, the spoken text is
-    /// the *prompt itself* (no "hey codex" prefix to strip) and an empty/blank
-    /// transcript is a deliberate no-op — a silent hold must not launch a bare
-    /// session. Non-empty text routes through the registry exactly like the wake
-    /// path's freeform branch, so a spoken command trigger still works.
-    /// Returns `true` if the hold launched something, `false` if it was a no-op
-    /// (empty/blank hold, or nothing resolved). The caller uses this to settle the
-    /// UI: a fired hold is settled by the launch flow, but a no-op leaves nothing
-    /// to settle the "capturing" visual — so the caller must reset it itself.
-    @discardableResult
-    public func handleManual(utterance: [Float]) -> Bool {
-        // No cooldown guard here. A deliberate hold is already deduped by the key's
-        // press/release edges, and sharing the wake path's cooldown (default 2s)
-        // would silently swallow a hold that follows a recent wake/PTT fire — the
-        // "my hotkey sometimes does nothing" failure. We still bump `lastFireTime`
-        // on a real fire so the *wake* path stays debounced after a manual one.
-        let transcript = transcribe(utterance)
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            observe?(Outcome(transcript: transcript, strippedCommand: nil, resolved: nil))
-            return false                            // empty hold → no-op, no fire-time bump
-        }
-        lastFireTime = now()
-        let resolution = registry.resolve(transcript: trimmed)
-        observe?(Outcome(transcript: transcript, strippedCommand: trimmed, resolved: resolution))
-        guard let r = resolution else { return false }
-        execute(r.command, r.prompt)
-        return true
     }
 }

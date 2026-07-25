@@ -3,7 +3,7 @@ import Foundation
 /// Records ONE spoken utterance from the mic for wake-word enrollment.
 ///
 /// Mirrors the live pipeline so samples are representative: it keeps a rolling
-/// pre-roll while listening, detects speech onset (VAD), then `fire()`s — seeding
+/// pre-roll while listening, detects speech onset (VAD), then `fire()`s, seeding
 /// the captured clip with the pre-roll so the leading "hey" is never lost to mic
 /// warmup. Ends on the same silence endpoint the real pipeline uses. Delivers the
 /// clip once, then stops. One recorder = one utterance.
@@ -13,7 +13,7 @@ import Foundation
 public final class EnrollmentRecorder: @unchecked Sendable {
     /// Target RMS for a normalized clip, and the peak a boost may never cross.
     ///
-    /// Measured on this Mac (AUDIT-2026-07-24.md P1.1): the model's own reference
+    /// Measured on this Mac: the model's own reference
     /// audio sits at RMS 0.047 (peak 0.53), while three real enrollment takes came
     /// in at RMS 0.0052-0.0092 - 5x to 9x quieter - and a phrase that fires at
     /// every threshold at normal level produced zero hits at every threshold once
@@ -55,7 +55,7 @@ public final class EnrollmentRecorder: @unchecked Sendable {
     /// at or below `lowLevelRMS`, so a caller can warn about the mic itself rather
     /// than let three quiet takes fail calibration with no explanation - this
     /// parameter is additive (default nil) so it does not require touching every
-    /// existing call site. Both closures run on the audio queue — hop to main
+    /// existing call site. Both closures run on the audio queue; hop to main
     /// yourself.
     public func record(onSpeechStart: (@Sendable () -> Void)? = nil,
                        onLowLevel: (@Sendable (Float) -> Void)? = nil,

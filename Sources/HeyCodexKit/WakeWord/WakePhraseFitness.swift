@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Measured, not guessed. Two earlier guesses were both wrong: that the tokens the
 /// model decodes from a recording make a better keyword than the phrase's own
-/// spelling (they fire on nothing — a decode of "Hey Xena" as `▁A Z EN A` failed on
+/// spelling (they fire on nothing: a decode of "Hey Xena" as `▁A Z EN A` failed on
 /// the very takes it came from), and that a fallback boundary token in the
 /// tokenisation predicts failure (`yo robot` and `hey zorp` contain one and wake
 /// perfectly). See `swift run hey-codex-selftest phrase-fitness`.
@@ -23,7 +23,7 @@ import Foundation
 /// `startsWithUnspellableLetter`). This stays a warning, never a refusal - the
 /// user's own recordings are the real authority, and `WakeCandidateSearch`
 /// trying the phrase's other words may well rescue it anyway (e.g. "Hey Xena"
-/// -> "Xena" fires 3/3 on real takes, see AUDIT-2026-07-24.md).
+/// -> "Xena" fires 3/3 on real takes).
 public enum WakePhraseFitness {
     public enum Verdict: Equatable, Sendable {
         /// Worth recording.

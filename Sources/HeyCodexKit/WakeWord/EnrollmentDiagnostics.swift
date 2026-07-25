@@ -80,7 +80,7 @@ public enum EnrollmentDiagnostics {
     /// Opt-in, gated by the same marker as `keepsAudio` (see above) - not a
     /// second on/off switch to keep in sync. With no marker file, an enrollment
     /// leaves no `enrollment.log` at all, matching the privacy claim the app
-    /// makes on screen (AUDIT-2026-07-24.md P0.1).
+    /// makes on screen.
     public static func record(phrase: String,
                               tokens: String,
                               sampleCounts: [Int],
@@ -110,7 +110,7 @@ public enum EnrollmentDiagnostics {
         } catch {
             // Every write here used to be `try?` - a failed write and a working
             // one looked identical, for the one component whose entire purpose is
-            // leaving a record (AUDIT-2026-07-24.md P1.5).
+            // leaving a record.
             Log.diagnostics.error("enrollment.log write failed: \(String(describing: error), privacy: .public)")
         }
     }

@@ -4,8 +4,8 @@ import Foundation
 /// Turns a phrase into the token sequence the keyword spotter expects.
 ///
 /// The keyword file must contain the phrase encoded with the model's own BPE
-/// vocabulary, and this uses the same encoder sherpa-onnx uses — `ssentencepiece`,
-/// already compiled into the static library we link — rather than reimplementing
+/// vocabulary, and this uses the same encoder sherpa-onnx uses (`ssentencepiece`,
+/// already compiled into the static library we link) rather than reimplementing
 /// it. `sherpa-onnx-cli text2token` is the documented offline equivalent, and the
 /// keyword spotter's own C API has no field for tokenising text itself, so the
 /// caller has to do it.

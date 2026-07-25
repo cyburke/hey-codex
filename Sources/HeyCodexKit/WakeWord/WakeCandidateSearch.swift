@@ -1,12 +1,12 @@
 import Foundation
 
 /// Chooses which spelling of a phrase to arm, by trying a small, ordered set of
-/// candidate encodings against the user's own recordings — instead of handing
+/// candidate encodings against the user's own recordings, instead of handing
 /// `WakeCalibration` exactly one spelling and giving up if it never fires.
 ///
-/// Measured on three real recordings of "Hey Xena" (see AUDIT-2026-07-24.md):
+/// Measured on three real recordings of one phrase:
 /// the full phrase, canonically tokenized (`▁HE Y ▁ X EN A`), fires 0/3 at
-/// every threshold from 0.25 down to 0.08. That is not a bad recording — the
+/// every threshold from 0.25 down to 0.08. That is not a bad recording. The
 /// model's 500-piece vocabulary has zero word-initial pieces beginning with X
 /// or Z, so any word starting with one of those letters tokenizes with a
 /// standalone boundary piece that represents no sound (see
@@ -22,7 +22,7 @@ import Foundation
 /// words "in a" in any sentence.
 public enum WakeCandidateSearch {
     /// Leading filler words people naturally prefix a wake phrase with when
-    /// they type it. Only the first word is ever treated as filler — "hey siri
+    /// they type it. Only the first word is ever treated as filler: "hey siri
     /// hey" loses one "hey", not both, and a filler that isn't in first
     /// position isn't filler, it's part of the phrase.
     static let fillers: Set<String> = ["hey", "ok", "okay", "yo", "hi"]
@@ -48,7 +48,7 @@ public enum WakeCandidateSearch {
     /// 1. The phrase exactly as typed.
     /// 2. The phrase with a leading filler word removed, if it starts with one.
     /// 3. The final word alone, if that differs from candidate 2.
-    /// Pure text generation — no tokenizing, no model, no audio. Duplicates
+    /// Pure text generation: no tokenizing, no model, no audio. Duplicates
     /// (case-insensitive) are dropped so the same spelling never gets tried,
     /// and therefore never gets disclosed, twice.
     public static func candidatePhrases(for phrase: String) -> [String] {
@@ -71,15 +71,15 @@ public enum WakeCandidateSearch {
     /// tighter bar than usual.
     ///
     /// Rule: fewer than 4 tokenized pieces, or a single word. Both are cheap
-    /// acoustic targets — a two-token line like `▁IN ▁A` (the junk decode that
+    /// acoustic targets: a two-token line like `▁IN ▁A` (the junk decode that
     /// motivated this whole search, see the type doc) only needs two weak
     /// pieces to line up, and it did so on the words "in a" in ordinary
     /// speech. `WakePhraseFitness` screens the full phrase only at the
     /// strictest threshold, on the theory that a phrase built to be sayable
     /// on purpose won't accidentally get easier to trigger as sensitivity is
-    /// loosened. A short fallback candidate has no such guarantee — it is by
+    /// loosened. A short fallback candidate has no such guarantee: it is by
     /// construction the leftover of a phrase, not something chosen for
-    /// distinctiveness — and calibration may well settle on a loose threshold
+    /// distinctiveness, and calibration may well settle on a loose threshold
     /// for it, so the screen has to hold at every threshold calibration might
     /// choose, not just the strictest.
     static func isShort(tokens: String, phrase: String) -> Bool {
@@ -107,7 +107,7 @@ public enum WakeCandidateSearch {
     /// `WakeCalibration.fires` is injected.
     ///   - onCandidate: called with each candidate phrase right before it is
     ///     tried, so a caller can show progress on a step that can run several
-    ///     seconds (enrollment-latency work, AUDIT-2026-07-24.md). Optional and
+    ///     seconds. Optional and
     ///     defaulted so existing callers, including every test, are unaffected.
     public static func search(phrase: String,
                               samples: [[Float]],

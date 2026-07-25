@@ -46,3 +46,22 @@ body:
       label: Voice hotkey configured in BOTH apps
       description: The chord set in ChatGPT and in Hey Codex Settings. They must match.
       placeholder: "Control-Option-V"
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### Optional: wake-word diagnostics
+
+        This is off by default and entirely optional, mainly useful for reports like "the wake word does not work" or "my custom phrase misfires."
+
+        Turning it on also saves your enrollment recordings locally, so only do this if you are fine sending those along:
+
+        1. Create an empty file at `~/Library/Application Support/HeyCodex/keep-enrollment-audio` (any text editor, or `touch` in Terminal).
+        2. Reproduce the problem: re-run enrollment, or say the wake phrase a few times.
+        3. Attach `~/Library/Application Support/HeyCodex/enrollment.log` below.
+        4. Delete the `keep-enrollment-audio` marker file afterwards so diagnostics go back to off.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics log (optional)
+      description: Paste or attach the contents of enrollment.log, if you opted in above.

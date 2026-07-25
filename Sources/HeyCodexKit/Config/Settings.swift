@@ -1,38 +1,8 @@
 import Foundation
 
-/// Which terminal "launch CLI" targets.
-public enum TerminalKind: String, Codable, CaseIterable, Sendable {
-    case terminalApp    = "Terminal"
-    case iterm2         = "iTerm2"
-    case ghostty        = "Ghostty"
-    case cursorTerminal = "Cursor Terminal"
-
-    /// App bundle identifier - for availability checks and app-icon lookup.
-    public var bundleID: String {
-        switch self {
-        case .terminalApp:    return "com.apple.Terminal"
-        case .iterm2:         return "com.googlecode.iterm2"
-        case .ghostty:        return "com.mitchellh.ghostty"
-        case .cursorTerminal: return "com.todesktop.230313mzl4w4u92"
-        }
-    }
-
-    /// Whether launching requires Accessibility permission (System Events keystrokes)
-    /// rather than Automation permission (direct AppleEvents to the app).
-    public var needsAccessibility: Bool {
-        switch self {
-        case .ghostty, .cursorTerminal: return true
-        case .terminalApp, .iterm2:     return false
-        }
-    }
-}
-
 /// User-configurable settings. Persisted as JSON (SettingsStore).
 public struct Settings: Codable, Equatable, Sendable {
-    // Legacy compatibility fields. The Hey Codex menu-bar app never launches a
-    // terminal, editor, or desktop app; it only posts the Voice shortcut.
     public var projectDirectory: String
-    public var preferredTarget: LaunchTarget
     public var wakeKeywordsScore: Float
     public var wakeKeywordsThreshold: Float
     public var cooldownSeconds: Double            // ignore re-fires within this window
@@ -42,15 +12,9 @@ public struct Settings: Codable, Equatable, Sendable {
                                                   // when the VAD never detects silence
     public var endpointSilenceMs: Int             // trailing silence that marks end-of-
                                                   // speech (you stopped talking)
-    public var claudeExecutable: String
     public var commands: [Command]
     public var defaultCommandID: String           // bare "hey codex"
     public var promptCommandID: String            // freeform prompt fallthrough
-    public var onboardingCompleted: Bool          // first-run wake enrollment + setup done
-    public var mascotID: String                    // selected mascot (MascotCatalog id)
-    public var mascotColorHex: String              // mascot body color, e.g. "#D87757"
-    public var mascotIdleAnimations: Bool          // ambient idle mascot motion (blink/breathe/gestures)
-    public var pushToTalkEnabled: Bool             // hold-to-talk hotkey active
     /// Displayed phrase that was locally enrolled into KeywordStore.
     public var wakePhrase: String
     /// Dedicated ChatGPT Voice shortcut posted by the helper after a wake.
@@ -77,21 +41,14 @@ public struct Settings: Codable, Equatable, Sendable {
     public var lastUpdateCheck: Date?
 
     public init(projectDirectory: String = NSHomeDirectory(),
-                preferredTarget: LaunchTarget = .terminal(.terminalApp),
                 wakeKeywordsScore: Float = KeywordTuning.score,
                 wakeKeywordsThreshold: Float = 0.25,
                 cooldownSeconds: Double = 2.0,
                 maxUtteranceSeconds: Double = 30.0,
                 endpointSilenceMs: Int = 800,
-                claudeExecutable: String = "claude",
                 commands: [Command] = Command.seededDefaults,
                 defaultCommandID: String = "codex-voice",
                 promptCommandID: String = "codex-voice",
-                onboardingCompleted: Bool = false,
-                mascotID: String = "classic",
-                mascotColorHex: String = "#D87757",
-                mascotIdleAnimations: Bool = true,
-                pushToTalkEnabled: Bool = true,
                 wakePhrase: String = "Hey Codex",
                 voiceShortcut: VoiceShortcut = .default,
                 voiceShortcutSetupCompleted: Bool = false,
@@ -101,21 +58,14 @@ public struct Settings: Codable, Equatable, Sendable {
                 inputDeviceName: String? = nil,
                 lastUpdateCheck: Date? = nil) {
         self.projectDirectory = projectDirectory
-        self.preferredTarget = preferredTarget
         self.wakeKeywordsScore = wakeKeywordsScore
         self.wakeKeywordsThreshold = wakeKeywordsThreshold
         self.cooldownSeconds = cooldownSeconds
         self.maxUtteranceSeconds = maxUtteranceSeconds
         self.endpointSilenceMs = endpointSilenceMs
-        self.claudeExecutable = claudeExecutable
         self.commands = commands
         self.defaultCommandID = defaultCommandID
         self.promptCommandID = promptCommandID
-        self.onboardingCompleted = onboardingCompleted
-        self.mascotID = mascotID
-        self.mascotColorHex = mascotColorHex
-        self.mascotIdleAnimations = mascotIdleAnimations
-        self.pushToTalkEnabled = pushToTalkEnabled
         self.wakePhrase = WakePhrase.normalize(wakePhrase) ?? "Hey Codex"
         self.voiceShortcut = voiceShortcut
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
@@ -126,25 +76,15 @@ public struct Settings: Codable, Equatable, Sendable {
         self.lastUpdateCheck = lastUpdateCheck
     }
 
-    /// Pre-`LaunchTarget` settings stored the default destination as a bare
-    /// `TerminalKind` under `preferredTerminal`. Migrated into `preferredTarget`.
-    private enum LegacyKeys: String, CodingKey { case preferredTerminal }
-
     /// Custom decoding accepts old settings data, but all old routing is replaced
-    /// with the one Hey Codex Voice-shortcut command.
+    /// with the one Hey Codex Voice-shortcut command. Fields that no longer exist
+    /// (`preferredTarget`, `claudeExecutable`, `pushToTalkEnabled`, `pushToTalkKey`,
+    /// `mascotID`, `mascotColorHex`, `mascotIdleAnimations`, `onboardingCompleted`)
+    /// have no case in `CodingKeys` below, so a stray key for one of them in an
+    /// existing settings.json is simply ignored, not an error.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.projectDirectory = try container.decode(String.self, forKey: .projectDirectory)
-
-        if let t = try container.decodeIfPresent(LaunchTarget.self, forKey: .preferredTarget) {
-            self.preferredTarget = t
-        } else if let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
-            .decodeIfPresent(TerminalKind.self, forKey: .preferredTerminal) {
-            self.preferredTarget = .terminal(legacy)
-        } else {
-            self.preferredTarget = .terminal(.terminalApp)
-        }
-
         self.wakeKeywordsScore = try container.decode(Float.self, forKey: .wakeKeywordsScore)
         self.wakeKeywordsThreshold = try container.decode(Float.self, forKey: .wakeKeywordsThreshold)
         self.cooldownSeconds = try container.decode(Double.self, forKey: .cooldownSeconds)
@@ -152,25 +92,10 @@ public struct Settings: Codable, Equatable, Sendable {
             ?? 30.0
         self.endpointSilenceMs = try container.decodeIfPresent(Int.self, forKey: .endpointSilenceMs)
             ?? 800
-        self.claudeExecutable = try container.decode(String.self, forKey: .claudeExecutable)
 
         self.commands = Command.seededDefaults
         self.defaultCommandID = "codex-voice"
         self.promptCommandID = "codex-voice"
-        self.onboardingCompleted = try container.decodeIfPresent(Bool.self, forKey: .onboardingCompleted)
-            ?? false
-        self.mascotID = try container.decodeIfPresent(String.self, forKey: .mascotID)
-            ?? "classic"
-        self.mascotColorHex = try container.decodeIfPresent(String.self, forKey: .mascotColorHex)
-            ?? "#D87757"
-        self.mascotIdleAnimations = try container.decodeIfPresent(Bool.self, forKey: .mascotIdleAnimations)
-            ?? true
-        self.pushToTalkEnabled = try container.decodeIfPresent(Bool.self, forKey: .pushToTalkEnabled)
-            ?? true
-        // `pushToTalkKey` itself is gone (dead feature - no CGEventTap exists
-        // anywhere in the app), but old settings.json files on disk still carry
-        // it. CodingKeys below no longer has a case for it, so a stray
-        // "pushToTalkKey" object in existing JSON is simply ignored, not an error.
         self.wakePhrase = WakePhrase.normalize(try container.decodeIfPresent(String.self, forKey: .wakePhrase)
             ?? "Hey Codex") ?? "Hey Codex"
         self.voiceShortcut = try container.decodeIfPresent(VoiceShortcut.self, forKey: .voiceShortcut) ?? .default

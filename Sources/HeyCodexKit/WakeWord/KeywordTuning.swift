@@ -7,7 +7,7 @@ import Foundation
 /// library's "cjkchar" default deliberately - every keyword is pre-tokenized by
 /// `KeywordTokenizer` before sherpa ever sees it, so the BPE-vs-cjkchar setting
 /// has no effect here; measured across the model's own reference audio and real
-/// enrollment takes at every threshold (AUDIT-2026-07-24.md P1.4). Library
+/// enrollment takes at every threshold. Library
 /// defaults are from `KeywordSpotterConfig` in sherpa-onnx.
 public enum KeywordTuning {
     /// Acoustic probability needed to trigger. Lower fires more readily.
@@ -18,7 +18,7 @@ public enum KeywordTuning {
     /// Bonus keeping keyword paths alive through the beam search. The library
     /// default is 1.0. `score` and `numTrailingBlanks` were both GUESSED
     /// (1.5, 2) until measured against a 5-voice synthetic corpus plus real
-    /// audio in `TUNING-2026-07-25.md` - regenerate with
+    /// audio, regenerated with
     /// `swift run hey-codex-selftest tuning`. That grid swept score in
     /// {1.0, 1.25, 1.5, 1.75, 2.0} x numTrailingBlanks in {1, 2, 3} at this
     /// threshold and found 1.25/1 wakes on more of the corpus than the old
@@ -32,7 +32,7 @@ public enum KeywordTuning {
     /// Blank frames required after the keyword before it is finalised. The
     /// library default is 1. Higher waits for a pause after the keyword before
     /// firing, which suppresses a keyword fragment matched mid-sentence at the
-    /// cost of latency. Measured in `TUNING-2026-07-25.md`: 1 reached the
+    /// cost of latency. Measured by `swift run hey-codex-selftest tuning`: 1 reached the
     /// same zero-false-alarm result as the previously-guessed 2, with less
     /// latency, so there was no measured benefit to waiting longer.
     public static let numTrailingBlanks = 1
@@ -55,7 +55,7 @@ public enum KeywordTuning {
     /// constructions, not six. Trimming the sweep only removes work that was
     /// happening for phrases about to be REJECTED anyway, so this is a real
     /// but smaller win than first assumed, and it is not what produced the
-    /// 2-3s the user saw on phrases that worked (AUDIT-2026-07-24.md
+    /// 2-3s the user saw on phrases that worked (the check
     /// enrollment-latency work; see also `WakeEngineCache`, which is the
     /// bigger lever for the reject path, and `SynthesizedSpeech`'s disk cache,
     /// which is the bigger lever overall).

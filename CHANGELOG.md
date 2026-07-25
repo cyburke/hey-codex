@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Enrollment no longer looks frozen.** Calibration used to build a fresh
+  detector per clip per threshold; it now reuses one per (keyword, threshold)
+  pair, and the window shows what it is doing (recording, checking, tuning)
+  instead of sitting blank.
+- **Quiet microphones no longer silently fail enrollment.** A recording well
+  below the model's reference level is boosted toward it before calibration,
+  capped short of clipping, rather than being sent through unchanged and
+  coming back as an unexplained rejection.
+- **Wake word fires with less delay.** A measured tuning pass found the
+  keyword score and trailing-blank settings had been over-corrected; lowering
+  both keeps the same zero-false-alarm result with less latency.
+
+### Added
+
+- **A custom phrase that does not fire tries alternatives automatically.**
+  If the exact spelling never fires cleanly against your recordings, Hey
+  Codex tries a couple of related spellings, such as the phrase with a
+  leading "hey" dropped, before giving up. It tells you when it has armed
+  something other than what you typed.
+
+### Changed
+
+- Enrollment diagnostics (a log of tokens, timings, and per-threshold
+  results) remain off by default. Nothing is written unless a marker file is
+  created by hand; there is still no UI path to it.
+
 ## 0.1.2
 
 Setup and audio, both rebuilt after a full walkthrough on a clean machine found
@@ -7,21 +37,14 @@ real defects in each.
 
 ### Fixed
 
-- **Capture no longer disturbs audio output.** `AudioCapture` used `AVAudioEngine`,
-  which on macOS spans the default input *and* output and makes CoreAudio build a
-  running aggregate device over both. On hardware where one device serves both
-  directions, listening for a wake word activated the user's speakers. Rebuilt on
-  `AVCaptureSession`, input only. Measured: devices 5 -> 6 before, 5 -> 5 after.
-  Guarded by a new `audio-footprint` selftest.
-- **Voice now opens when ChatGPT is the frontmost app.** Events were routed to
-  ChatGPT's pid when it was in front, but Carbon hot keys are dispatched by the
-  window server and `postToPid` bypasses it, so the hot key never fired. Always
-  posts to the system HID tap now.
+- **Capture no longer disturbs your audio output.** On some hardware, listening for
+  a wake word could activate the speakers. Capture now touches the microphone and
+  nothing else, guarded by a test.
+- **Voice now opens when ChatGPT is the frontmost app.**
 - **The lock icon no longer lies.** A posted event was treated as a started Voice
   session. It is now confirmed against ChatGPT's own Voice panel.
-- **Relaunching releases the microphone first.** The post-permission relaunch
-  started its replacement before letting go of the mic, so two instances briefly
-  held the same input device.
+- **Relaunching releases the microphone first**, so two instances never hold the
+  input device at once.
 - Menu rebuilds can no longer recurse into themselves, which crashed the app with
   a stack overflow when setup completed.
 - Removed `com.apple.security.get-task-allow` from release builds. It allowed any

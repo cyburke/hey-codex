@@ -63,7 +63,7 @@ public enum AudioSamples {
     /// low-level signal enrollment needs: a phrase the model handles perfectly
     /// produces zero hits once its RMS is scaled down to real quiet-mic levels
     /// (measured on saved enrollment takes at RMS 0.005-0.009 against the KWS
-    /// model's own reference audio at 0.047 - see AUDIT-2026-07-24.md P1.1).
+    /// model's own reference audio at 0.047).
     public static func rms(_ samples: [Float]) -> Float {
         guard !samples.isEmpty else { return 0 }
         let sumSquares = samples.reduce(Float(0)) { $0 + $1 * $1 }

@@ -53,13 +53,4 @@ final class VoiceSessionTests: XCTestCase {
         session.handle(utterance: [0.1])
         XCTAssertNil(observed.value?.resolved)
     }
-
-    func test_handleManualEmptyClipDoesNotExecute() {
-        let executed = Box(false)
-        let session = VoiceSession(
-            transcribe: { _ in "   " }, now: { 0 }, cooldownSeconds: 0,
-            registry: registry(), execute: { _, _ in executed.value = true })
-        XCTAssertFalse(session.handleManual(utterance: [0, 0]))
-        XCTAssertFalse(executed.value)
-    }
 }

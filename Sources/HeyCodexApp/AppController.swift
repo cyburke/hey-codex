@@ -697,7 +697,7 @@ final class AppController {
 
     private func postVoiceShortcut(completion: @escaping @MainActor (Result<Void, LaunchFailure>) -> Void) {
         status = .activating
-        let executor = CommandExecutor(settings: settings, launcherFor: { _ in TerminalAppLauncher() })
+        let executor = CommandExecutor(settings: settings)
         executor.execute(Command.seededDefaults[0], prompt: nil) { result in
             Task { @MainActor in completion(result) }
         }

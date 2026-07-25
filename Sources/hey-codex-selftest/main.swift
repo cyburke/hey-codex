@@ -340,7 +340,7 @@ func probeReplayEnrollment(_ phrase: String) -> Bool {
 
         // The whole feature this probe exists to prove: does SOME spelling of
         // the phrase, not necessarily the literal one, end up usable on these
-        // real takes? See AUDIT-2026-07-24.md and WakeCandidateSearch.
+        // real takes? See WakeCandidateSearch.
         guard let search = WakeCandidateSearch.search(phrase: phrase, samples: clips,
                                                        negatives: negatives, tokenize: tokenize,
                                                        calibration: calibration) else {
@@ -731,12 +731,12 @@ func probePhraseFitness() -> Bool {
 
 /// Measures `KeywordTuning.score` and `KeywordTuning.numTrailingBlanks` on real
 /// audio, in both directions, and prints a grid so the numbers this file sets
-/// have a reproducible source instead of being guessed (AUDIT-2026-07-24.md,
+/// have a reproducible source instead of being guessed (they were
 /// "Open questions" item 3). Regenerate with:
 ///
 ///   swift run hey-codex-selftest tuning
 ///
-/// See TUNING-2026-07-25.md for the committed grid this produced, the exact
+/// Prints the grid this produced, the exact
 /// corpus, and the winning cell.
 ///
 /// Grid axes: score in {1.0, 1.25, 1.5, 1.75, 2.0} x numTrailingBlanks in
@@ -755,7 +755,7 @@ func probeTuning() -> Bool {
         let peakCeiling: Float = 0.5
 
         // Multiple voices deliberately: the two prior GUESSED values in this
-        // file were partly a single-voice mistake (AUDIT-2026-07-24.md
+        // file were partly a single-voice mistake (measured
         // "Deliberately NOT doing" section, re: the zena/xena re-test). Alex
         // is not installed on every macOS version, so Fred substitutes for it
         // here - both are US English `say` voices distinct from Samantha.
@@ -881,7 +881,7 @@ func probeTuning() -> Bool {
             }
         }
         // Real human recordings - three takes of "Hey Xena" (a phrase this
-        // model cannot spot at all; see AUDIT-2026-07-24.md "Deliberately NOT
+        // model cannot spot at all (measured across five voices; "Deliberately NOT
         // doing") captured on a distant monitor mic at RMS 0.005-0.009, 5-9x
         // below the KWS model's own reference level of 0.047. They are not
         // usable as positive evidence for any keyword in this grid - they say
@@ -1068,7 +1068,8 @@ func checkAudioLoader() -> Bool {
     }
 }
 
-// Calibrated wake-word threshold; see internal design notes.
+// Calibrated wake-word threshold, chosen from the threshold sweep in
+// probeWake/probeTuning below against real and synthetic clips.
 let wakeThreshold: Float = 0.25
 
 func makeWakeEngine(threshold: Float = wakeThreshold) throws -> WakeWordEngine {
@@ -1119,7 +1120,7 @@ func checkWakePositiveControl() -> Bool {
 // Fires on the synthetic `say -v Samantha "hey claude"` clip at the calibrated
 // defaults. The earlier "never fires" symptom was a streaming-flush bug (the
 // tail pad was too short to drain the zipformer's last chunk on a ~0.7s clip),
-// fixed in WakeWordEngine.detects(in:). See internal design notes.
+// fixed in WakeWordEngine.detects(in:).
 func checkWakePositive() -> Bool {
     run("wake.detectsWakePhraseInPositiveClip") { c in
         let engine = try makeWakeEngine()
@@ -1378,8 +1379,6 @@ func probeRoute() -> Bool {
 
         func kindLabel(_ k: CommandKind) -> String {
             switch k {
-            case .runCLI(let t):   return "runCLI(\(t))"
-            case .openApp(let b):  return "openApp(\(b))"
             case .runShell(let s): return "runShell(\(s))"
             case .sendCodexVoiceShortcut: return "sendCodexVoiceShortcut"
             }
@@ -1415,133 +1414,6 @@ func probeRoute() -> Bool {
     }
 }
 
-// MARK: - Editor target routing (mirrors EditorRoutingTests + CommandExecutorTests)
-
-final class URLBox: @unchecked Sendable { var url: URL? }
-final class ResultBox: @unchecked Sendable { var result: Result<Void, LaunchFailure>? }
-
-final class ProbeMockLauncher: TerminalLauncher, @unchecked Sendable {
-    var launched: [LaunchSpec] = []
-    func isAvailable() -> Bool { true }
-    func launch(_ spec: LaunchSpec) throws { launched.append(spec) }
-}
-
-func probeEditorRoute() -> Bool {
-    var ok = true
-    ok = run("editor.deepLinkEncodesPrompt") { c in
-        let url = DeepLinkBuilder.url(editor: .cursor, integration: .claudeCode,
-                                      prompt: "fix the bug - now 🚀")
-        c.assertEqual(url.absoluteString,
-            "cursor://anthropic.claude-code/open?prompt=fix%20the%20bug%20%E2%80%94%20now%20%F0%9F%9A%80")
-    } && ok
-    ok = run("editor.deepLinkNoPrompt") { c in
-        c.assertEqual(DeepLinkBuilder.url(editor: .vscode, integration: .claudeCode, prompt: nil).absoluteString,
-                      "vscode://anthropic.claude-code/open")
-    } && ok
-    ok = run("editor.launchTargetRoundTrips") { c in
-        for t: LaunchTarget in [.terminal(.iterm2), .editor(.cursor), .editor(.antigravity)] {
-            let data = try JSONEncoder().encode(t)
-            c.assertEqual(try JSONDecoder().decode(LaunchTarget.self, from: data), t)
-        }
-    } && ok
-    ok = run("editor.resolverPicksSingleActiveEditor") { c in
-        c.assertEqual(DefaultTargetResolver.resolve(candidates: [.cursor, .vscode], active: [.cursor]),
-                      .editor(.cursor))
-        c.assertEqual(DefaultTargetResolver.resolve(candidates: [.cursor, .vscode], active: []),
-                      .terminal(.terminalApp))
-        c.assertEqual(DefaultTargetResolver.resolve(candidates: [.cursor, .vscode], active: [.cursor, .vscode]),
-                      .terminal(.terminalApp))
-    } && ok
-    ok = run("editor.resolverMapsIdeNames") { c in
-        c.assertEqual(DefaultTargetResolver.activeEditors(
-            fromIdeNames: ["Cursor", "Visual Studio Code"], among: [.cursor, .vscode, .antigravity]),
-                      [.cursor, .vscode])
-    } && ok
-    ok = run("editor.executorOpensDeepLink") { c in
-        let box = URLBox()
-        let exec = CommandExecutor(settings: .default,
-                                   launcherFor: { _ in ProbeMockLauncher() },
-                                   openURL: { box.url = $0; return true })
-        let cmd = Command(id: "claude-code", label: "Claude Code", triggers: ["code"],
-                          kind: .runCLI(commandTemplate: "claude {prompt}"),
-                          target: .editor(.cursor), acceptsPrompt: true,
-                          editorIntegration: .claudeCode)
-        exec.execute(cmd, prompt: "fix the bug") { _ in }
-        c.assertEqual(box.url?.absoluteString ?? "nil",
-                      "cursor://anthropic.claude-code/open?prompt=fix%20the%20bug")
-    } && ok
-    ok = run("editor.availabilityTempHome") { c in
-        let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hc-selftest-avail-\(ProcessInfo.processInfo.globallyUniqueString)")
-        let ext = home.appendingPathComponent(".cursor/extensions/anthropic.claude-code-2.1.0")
-        try FileManager.default.createDirectory(at: ext, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let avail = EditorAvailability(home: home, appInstalled: { $0 == EditorKind.cursor.bundleID })
-        c.assert(avail.isReady(.cursor, integration: .claudeCode), "cursor should be ready")
-        c.assert(!avail.isReady(.vscode, integration: .claudeCode), "vscode should not be ready")
-    } && ok
-    return ok
-}
-
-// LIVE end-to-end: drives the REAL backend path (Command → CommandExecutor →
-// DeepLinkBuilder → NSWorkspace.open) to open Claude Code inside Cursor. Has a
-// real side effect, so it's never part of "all" - run it explicitly.
-func probeEditorOpenLive(_ editor: EditorKind) -> Bool {
-    let exec = CommandExecutor(settings: .default,
-                               launcherFor: { _ in ProbeMockLauncher() })
-    let cmd = Command(id: "claude-code", label: "Claude Code", triggers: ["code"],
-                      kind: .runCLI(commandTemplate: "claude {prompt}"),
-                      target: .editor(editor), acceptsPrompt: true,
-                      editorIntegration: .claudeCode)
-    let prompt = "BACKEND TEST - opened via CommandExecutor, do not press enter"
-    print("  url = \(DeepLinkBuilder.url(editor: editor, integration: .claudeCode, prompt: prompt).absoluteString)")
-    let outcome = ResultBox()
-    exec.execute(cmd, prompt: prompt) { outcome.result = $0 }
-    switch outcome.result {
-    case .success:
-        print("OPENED  \(editor.rawValue) - check the editor for a Claude Code panel")
-        return true
-    case .failure(let f):
-        print("FAIL    \(f.localizedDescription)")
-        return false
-    case .none:
-        print("FAIL    no result (completion not called)")
-        return false
-    }
-}
-
-// Claude-Code-only routing on the shipped defaults (pure - no models needed).
-func probeDefaultRouting() -> Bool {
-    run("routing.claudeCodeOnlyDefaults") { c in
-        let s = Settings.default
-        c.assertEqual(s.defaultCommandID, "claude-code", "bare wake → code")
-        let registry = CommandRegistry(commands: s.commands,
-                                       defaultCommandID: s.defaultCommandID,
-                                       promptCommandID: s.promptCommandID)
-        // bare "hey claude" (stripped to nil) → claude-code, no prompt
-        let bare = registry.resolve(transcript: nil)
-        c.assertEqual(bare?.command.id ?? "nil", "claude-code")
-        c.assert(bare?.prompt == nil, "bare wake should carry no prompt")
-        // "code <task>" → claude-code with the task as prompt
-        let withTask = registry.resolve(transcript: "code refactor the auth module")
-        c.assertEqual(withTask?.command.id ?? "nil", "claude-code")
-        c.assertEqual(withTask?.prompt ?? "nil", "refactor the auth module")
-        // freeform → claude-code with full text
-        let freeform = registry.resolve(transcript: "what does this function do")
-        c.assertEqual(freeform?.command.id ?? "nil", "claude-code")
-        // no leftover desktop-app command
-        c.assert(!s.commands.contains { $0.id == "claude-desktop" }, "claude-desktop should be gone")
-
-        // Migration: a claude-code command persisted before `editorIntegration`
-        // existed must be backfilled - else an editor target falls back to a
-        // terminal. (The exact shape that shipped in users' settings.json.)
-        let legacy = #"{"projectDirectory":"/tmp","preferredTarget":{"type":"editor","value":"Cursor"},"wakeKeywordsScore":2,"wakeKeywordsThreshold":0.25,"cooldownSeconds":2,"claudeExecutable":"claude","onboardingCompleted":true,"defaultCommandID":"claude-code","promptCommandID":"claude-code","commands":[{"acceptsPrompt":true,"id":"claude-code","kind":{"runCLI":{"commandTemplate":"claude {prompt}"}},"label":"Claude Code","triggers":["code"]}]}"#
-        let migrated = try JSONDecoder().decode(Settings.self, from: Data(legacy.utf8))
-        let cc = migrated.commands.first { $0.id == "claude-code" }
-        c.assert(cc?.editorIntegration == .claudeCode, "editorIntegration should be backfilled on migrated claude-code")
-    }
-}
-
 // MARK: - Dispatch
 
 func main() -> Int32 {
@@ -1550,11 +1422,6 @@ func main() -> Int32 {
     var allOK = true
 
     // Explicit, side-effecting live checks - never part of "all".
-    if requested == "editor-open-live" {
-        let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
-        let editor = EditorKind(rawValue: editorArg) ?? .cursor
-        return probeEditorOpenLive(editor) ? 0 : 1
-    }
     if requested == "path-parity" {
         let phrase = CommandLine.arguments.dropFirst(2).joined(separator: " ")
         return probePathParity(phrase.isEmpty ? "hey codex" : phrase) ? 0 : 1
@@ -1630,8 +1497,6 @@ func main() -> Int32 {
         maybe("threshold-sweep", probeThresholdSweep)
         maybe("asr", checkTranscribe)
         maybe("route", probeRoute)
-        maybe("default-route", probeDefaultRouting)
-        maybe("editor-route", probeEditorRoute)
     }
 
     return allOK ? 0 : 1

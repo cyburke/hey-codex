@@ -25,12 +25,12 @@ public enum SynthesizedSpeech {
 
     /// The four negative clips cost ~1s each to synthesize (spawning `say` +
     /// `afconvert` dominates, not model inference - measured in
-    /// AUDIT-2026-07-24.md's enrollment-latency work) and never change, so they
+    /// spawning `say` and `afconvert`) and never change, so they
     /// are written to disk once and reused forever after, plus memoized in
     /// memory so repeated calls within one run of the app are free.
     ///
     /// PRIVACY NOTE, since this writes into the same `~/Library/Application
-    /// Support/HeyCodex/` directory AUDIT-2026-07-24.md P0.1 locked down: this
+    /// Support/HeyCodex/` directory the privacy rules cover: this
     /// is a DIFFERENT thing from that finding and is not gated behind
     /// `EnrollmentDiagnostics.keepsAudio`, deliberately. What gets written here
     /// is four fixed, built-in, non-personal test sentences (`falseAlarmPhrases`

@@ -17,7 +17,7 @@ Use `./scripts/build-release.sh` to make a self-contained `dist/HeyCodex.app`. I
 
 - All wake-word processing and enrollment remain local.
 - Never inject Command–V. The release default is `⌃⌥V`, and the user-configured chord must match ChatGPT desktop’s Voice shortcut.
-- Do not launch or focus ChatGPT. The helper only posts the configured global shortcut.
+- Hey Codex may launch ChatGPT if it is not running (`AppController.ensureChatGPTRunning`), because a hotkey press reaches nothing with the app closed. It must never activate or focus it: `NSWorkspace.OpenConfiguration.activates` stays `false`, so ChatGPT starts in the background and the user's frontmost app does not change.
 - Preserve the one-shot activation latch. Repeated wake phrases must never toggle an open Voice session off.
 - Capture input only. `AudioCapture` is built on `AVCaptureSession`, not `AVAudioEngine`, because AVAudioEngine on macOS spans the default input *and* output and makes CoreAudio build a running aggregate device over both. On hardware where one device serves both directions that disturbed the user's audio output. `swift run hey-codex-selftest audio-footprint` fails if capture creates any device; do not regress it.
 - Never claim a Voice session started because an event was posted. `VoicePanelObserver` confirms against ChatGPT's own panel, and `VoiceDetectionTrust` keeps that strictly additive so an install that cannot observe the panel behaves exactly as it did before detection existed.
@@ -44,3 +44,5 @@ Do not delete tests solely to obtain a green run. Add a focused test when changi
 ## Pull requests
 
 Keep changes focused, explain privacy/permission implications, and avoid committing recordings, models, signing credentials, or notarization secrets. Contributions are licensed under GPL-3.0.
+
+A notarized build from anyone holding an Apple Developer ID would remove the Gatekeeper step for everyone who installs outside Homebrew. Open an issue if you can help with that.

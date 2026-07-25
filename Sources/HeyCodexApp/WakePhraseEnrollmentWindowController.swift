@@ -14,7 +14,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// Real, honest activity feedback: spins whenever work is happening off the
     /// main thread (the fitness check, tuning) so a multi-second stage never
     /// reads as a hang. Indeterminate only - there is no percentage to compute
-    /// for either stage, so this never fakes one (AUDIT-2026-07-24.md).
+    /// for either stage, so this never fakes one.
     private let spinner = NSProgressIndicator()
     private let startButton = NSButton(title: "Record It Three Times", target: nil, action: nil)
     private var recorder: EnrollmentRecorder?
@@ -168,7 +168,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     }
 
     /// Try the phrase before asking anyone to say it three times, and say what
-    /// happened — but never refuse.
+    /// happened, but never refuse.
     ///
     /// The check speaks the phrase with `say` and tests the real keyword, which
     /// catches phrases like "Hey Xena" that no amount of recording will fix. It is a
@@ -208,7 +208,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
                 case .good:
                     self.beginRecording()
                 case .cannotSpot:
-                    // Name the real cause when there is one (AUDIT-2026-07-24.md):
+                    // Name the real cause when there is one:
                     // this model has no way to spell a word starting with X or Z.
                     // Still just a warning - record it and see, and a shorter
                     // spelling of the same phrase may work even when the full
@@ -351,7 +351,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
             })
             let tokenize: (String) -> String? = { KeywordTokenizer.tokenize($0, modelDir: kwsModel) }
             // Screened once, against every candidate: MANDATORY SAFETY per
-            // AUDIT-2026-07-24.md - nothing gets armed without first proving it
+            // Nothing gets armed without first proving it
             // stays quiet on ordinary speech.
             let negatives = SynthesizedSpeech.falseAlarmClips()
             let search = WakeCandidateSearch.search(
@@ -447,7 +447,7 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// Confirmation belongs in this window. An NSAlert here was the only modal in
     /// the whole app, and it read as something having gone wrong.
     ///
-    /// MANDATORY HONESTY (AUDIT-2026-07-24.md): when the armed spelling is not
+    /// MANDATORY HONESTY: when the armed spelling is not
     /// the phrase the user typed, they are told plainly what the app is
     /// actually listening for. Never a silent substitution.
     private func showSuccess(phrase: String, candidate: WakeCandidateSearch.Candidate,

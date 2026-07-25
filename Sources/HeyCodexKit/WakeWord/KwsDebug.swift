@@ -34,8 +34,8 @@ public enum KwsDebug {
         rec.acceptWaveform(samples: samples)
         // Same tail flush as WakeWordEngine.detects: this streaming zipformer needs
         // a full second of pad plus inputFinished to emit its last chunk. With 0.3s
-        // and no inputFinished, every decode lost its final token — "hey jarvis"
-        // came back as "HEY JARVI" — which reads as a mispronunciation rather than
+        // and no inputFinished, every decode lost its final token: "hey jarvis"
+        // came back as "HEY JARVI", which reads as a mispronunciation rather than
         // a truncation and sent one diagnosis down the wrong path entirely.
         rec.acceptWaveform(samples: [Float](repeating: 0, count: 16000))
         rec.inputFinished()

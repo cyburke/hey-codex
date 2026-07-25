@@ -7,7 +7,7 @@ public final class WakeWordEngine {
     /// the specific case, but `LocalizedError` means whichever file was missing
     /// still survives into any `error.localizedDescription` those call sites
     /// already show the user, instead of every distinct failure collapsing into
-    /// the same generic message (AUDIT-2026-07-24.md P1.5).
+    /// the same generic message.
     public enum Error: Swift.Error, LocalizedError {
         case missingModelFile(String)
 
@@ -31,11 +31,11 @@ public final class WakeWordEngine {
     ///   - keywordsFile: tokenized keywords file containing the "hey codex" entry.
     ///   - keywordsThreshold: per-keyword trigger gate. Lower fires more eagerly.
     ///   - keywordsScore: per-keyword boost added to keyword-path hypotheses
-    ///     during the modified beam search — it keeps the keyword path alive in
+    ///     during the modified beam search: it keeps the keyword path alive in
     ///     the beam when acoustic evidence is weak. This is the primary lever for
     ///     spotting a hard wake word on a small model; see `KeywordTuning.score`
     ///     for the calibrated value and why it is 1.25, not the library's 1.0
-    ///     (TUNING-2026-07-25.md has the measurement).
+    ///     (regenerate the measurement with `swift run hey-codex-selftest tuning`).
     ///   - maxActivePaths: beam width for the keyword spotter's modified search.
     ///   - numTrailingBlanks: blank frames required after the keyword before it
     ///     is finalised. Higher makes it wait for a pause, which cuts false
@@ -51,7 +51,7 @@ public final class WakeWordEngine {
                 // `guard let engine = try? WakeWordEngine(...)` at every call site
                 // collapses every distinct missing file into one generic failure -
                 // log the specific name here so it survives that, in Console.app
-                // even when nobody kept the thrown error (AUDIT-2026-07-24.md P1.5).
+                // even when nobody kept the thrown error.
                 Log.audio.error("WakeWordEngine: missing model file \(name, privacy: .public) in \(modelDir.path, privacy: .public)")
                 throw Error.missingModelFile(name)
             }
@@ -68,7 +68,7 @@ public final class WakeWordEngine {
         // itself here and modeling_unit/bpe_vocab make no difference to what
         // fires: measured by feeding the model's own reference audio and three
         // real enrollment takes through both settings across the full threshold
-        // sweep and diffing the results - identical in every case (AUDIT-2026-07-24.md
+        // sweep and diffing the results, identical in every case.
         // P1.4). Left at the library's "cjkchar" default; a `bpe.model` file is
         // deliberately not shipped (see scripts/bundle-app.sh) so this also matches
         // what every built app actually runs.
@@ -124,7 +124,7 @@ public final class WakeWordEngine {
     ///
     /// Feeds one frame of 16 kHz mono samples into the persistent stream and
     /// drains the decoder. Unlike `detects(in:)`, this does NOT call
-    /// `inputFinished()` — the stream stays alive across calls so the next
+    /// `inputFinished()`: the stream stays alive across calls so the next
     /// frame continues the same utterance. Returns `true` and `reset()`s the
     /// stream's decoding state on a fire (so the next call starts fresh);
     /// returns `false` otherwise, leaving the stream ready for more frames.

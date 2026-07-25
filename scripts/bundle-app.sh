@@ -43,7 +43,7 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # KeywordTuning.bpeVocabName) to decide modeling_unit "bpe" vs falling back to
 # "cjkchar". Leaving it out of KWS_FILES means that check always misses on a
 # shipped build, so every release currently runs with the cjkchar fallback -
-# see WakeWordEngine.swift and P1.4 in AUDIT-2026-07-24.md. Keep in sync with
+# see WakeWordEngine.swift. Keep in sync with
 # WakeWordEngine.init and KeywordTokenizer - a missing file fails loudly there.
 KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
 KWS_FILES=(

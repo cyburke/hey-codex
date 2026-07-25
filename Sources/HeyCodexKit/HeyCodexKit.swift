@@ -1,7 +1,8 @@
 import CSherpaOnnx
 
-/// Hey Claude — on-device, voice-activated launcher for Claude Code.
-/// Unofficial community project. Not affiliated with Anthropic.
+/// Hey Codex - on-device, voice-activated launcher for ChatGPT Voice.
+/// Unofficial community project. Not affiliated with, endorsed by, or
+/// connected to OpenAI.
 public enum HeyCodexKit {
     /// Returns true if the sherpa-onnx C symbols link and load.
     ///

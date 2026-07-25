@@ -9,15 +9,14 @@ let package = Package(
         // On-machine test harness: this CLT-only toolchain has no XCTest runner
         // (`xcrun --find xctest` fails), so the XCTest files in
         // Tests/HeyCodexKitTests are retained for CI/Xcode while verification
-        // here runs through this executable. See internal design notes.
+        // here runs through this executable.
         .executable(name: "hey-codex-selftest", targets: ["hey-codex-selftest"]),
         .executable(name: "HeyCodexApp", targets: ["HeyCodexApp"]),
     ],
     dependencies: [],
     targets: [
         // Prebuilt sherpa-onnx static xcframework (universal2 macOS).
-        // Fetched + module map injected by `scripts/fetch-sherpa.sh` (gitignored);
-        // see internal design notes for the reproducible setup.
+        // Fetched + module map injected by `scripts/fetch-sherpa.sh` (gitignored).
         .binaryTarget(
             name: "CSherpaOnnx",
             path: "Sources/CSherpaOnnx/sherpa-onnx.xcframework"

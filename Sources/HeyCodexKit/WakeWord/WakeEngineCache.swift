@@ -3,7 +3,7 @@ import Foundation
 /// Caches one `WakeWordEngine` per (keyword line, threshold) pair, since engine
 /// construction (~226ms, loading 3 ONNX models) dominates cost far more than
 /// `detects(in:)` on an already-built engine (~76ms) - measured in
-/// AUDIT-2026-07-24.md's enrollment-latency work. Enrollment tests the same
+/// the enrollment-latency work. Enrollment tests the same
 /// (line, threshold) pair against every recorded clip and every negative clip
 /// in turn, so building the engine once per pair instead of once per clip
 /// collapses calibration's 18 constructions (6 thresholds x 3 takes) down to 6.

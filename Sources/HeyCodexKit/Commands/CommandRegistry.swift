@@ -1,13 +1,13 @@
 import Foundation
 
 /// Resolves a trailing transcript to a command + optional prompt.
-/// Rules (generalizing the old §5 table):
+/// Rules:
 ///   1. no speech            → defaultCommand, no prompt
 ///   2. starts with a trigger → that command; remainder → prompt (if acceptsPrompt)
 ///   3. otherwise (freeform)  → promptCommand with the full text as prompt
 public struct CommandRegistry {
     public var commands: [Command]
-    public var defaultCommandID: String   // bare "hey claude"
+    public var defaultCommandID: String   // bare "hey codex"
     public var promptCommandID: String    // freeform fallthrough
 
     public init(commands: [Command], defaultCommandID: String, promptCommandID: String) {
