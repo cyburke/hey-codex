@@ -71,3 +71,37 @@ final class AccessibilityGrantTests: XCTestCase {
         }
     }
 }
+
+final class AccessibilityGrantIsStuckTests: XCTestCase {
+    /// The trap `isStale` alone cannot see: a relaunch was already spent
+    /// trying to pick up a grant, and `AXIsProcessTrusted` never came back
+    /// true at all - not "trusted but cannot post", just plain
+    /// `.needsAccessibility` again. This is exactly what an ad-hoc signed
+    /// build replaced mid-setup produces: the relaunch happens, the new
+    /// binary's code identity does not match whatever was granted, and the
+    /// process is stuck in the ordinary "not yet granted" state forever,
+    /// with "Allow" doing nothing because a decision already exists.
+    func test_stuckWhenStillNotTrustedAfterARelaunch() {
+        XCTAssertTrue(AccessibilityGrant.isStuck(state: .needsAccessibility, alreadyRelaunched: true))
+    }
+
+    func test_notStuckOnTheFirstAttemptBeforeAnyRelaunch() {
+        XCTAssertFalse(AccessibilityGrant.isStuck(state: .needsAccessibility, alreadyRelaunched: false))
+    }
+
+    /// The original `isStale` case - trusted, cannot post, already relaunched
+    /// once - must also read as stuck, since it is a subset of the same
+    /// "Allow has nothing left to do" situation.
+    func test_stuckCoversTheOriginalStaleCaseToo() {
+        XCTAssertTrue(AccessibilityGrant.isStuck(state: .accessibilityPendingRelaunch, alreadyRelaunched: true))
+        XCTAssertFalse(AccessibilityGrant.isStuck(state: .accessibilityPendingRelaunch, alreadyRelaunched: false),
+                       "the first relaunch is the normal path and must not read as stuck")
+    }
+
+    func test_mostlyDoneStatesAreNeverStuck() {
+        for state: SetupState in [.ready, .needsMicrophone, .microphoneBlocked] {
+            XCTAssertFalse(AccessibilityGrant.isStuck(state: state, alreadyRelaunched: true),
+                           "\(state) is not an Accessibility problem, so it must never show Accessibility-stuck guidance")
+        }
+    }
+}

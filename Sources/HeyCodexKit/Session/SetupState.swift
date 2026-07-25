@@ -31,6 +31,25 @@ public enum AccessibilityGrant {
     public static func isStale(state: SetupState, alreadyRelaunched: Bool) -> Bool {
         state == .accessibilityPendingRelaunch && alreadyRelaunched
     }
+
+    /// True once a relaunch has already been spent trying to pick up an
+    /// Accessibility grant and the process still cannot proceed - whether
+    /// `AXIsProcessTrusted` came back true and `CGPreflightPostEventAccess`
+    /// still refuses (the narrow case `isStale` covers), or
+    /// `AXIsProcessTrusted` never came back true at all. Both read the same
+    /// to the person in front of the screen: they did something in System
+    /// Settings, the app relaunched, and it is still stuck. Either way,
+    /// clicking "Allow" again cannot help - `CGRequestPostEventAccess` only
+    /// ever acts when no decision is recorded, and a relaunch already having
+    /// happened means one is. Only System Settings can move this forward now,
+    /// typically by removing the row and granting fresh for this build.
+    public static func isStuck(state: SetupState, alreadyRelaunched: Bool) -> Bool {
+        guard alreadyRelaunched else { return false }
+        switch state {
+        case .needsAccessibility, .accessibilityPendingRelaunch: return true
+        case .needsMicrophone, .microphoneBlocked, .ready: return false
+        }
+    }
 }
 
 public enum SetupStateResolver {

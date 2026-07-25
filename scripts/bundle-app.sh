@@ -80,16 +80,36 @@ cp "$ROOT/Models/keywords.txt" "$APP/Contents/Resources/Models/keywords.txt"
 
 SIGN_ID="${HEYCODEX_SIGN_ID:-}"
 ENTITLEMENTS="$ROOT/scripts/entitlements.plist"
+# The signing identity decides whether users keep their permissions across an
+# update, and it is not a cosmetic choice.
+#
+# An ad-hoc signature produces a designated requirement of `cdhash H"..."`: the
+# exact bytes of that one build. Every rebuild is therefore a different app to
+# macOS, and Microphone and Accessibility grants are silently voided on every
+# upgrade, with the row still visible and switched on in System Settings. That
+# cost a full afternoon to diagnose once.
+#
+# Signing with a self-signed certificate produces `identifier "com.heycodex.app"
+# and certificate root = H"..."`, which names the bundle and the certificate and
+# contains no hash of the binary, so grants survive rebuilds. The certificate does
+# not need to be trusted by Gatekeeper for this: the app is unnotarized either way
+# and Homebrew clears the quarantine flag. Create one with
+# scripts/make-signing-cert.sh, and keep the .p12 backed up. Losing it means one
+# more forced re-grant for every user, once.
+STABLE_IDENTITY="Hey Codex Local Signing"
+if [ -z "$SIGN_ID" ] && security find-identity -p codesigning 2>/dev/null | grep -q "$STABLE_IDENTITY"; then
+    SIGN_ID="$STABLE_IDENTITY"
+fi
 # Microphone capture is entitlement-gated on modern macOS. Keep this attached
 # on every signature so the visible first-run consent can actually trigger.
-# Do not silently fall back to ad-hoc signing when a caller explicitly asked
-# for a stable identity.
 if [ -n "$SIGN_ID" ]; then
     codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_ID" "$APP"
     echo "Signed with $SIGN_ID"
+    codesign -d --requirements - "$APP" 2>&1 | grep designated | sed 's/^/  /'
 else
     codesign --force --deep --entitlements "$ENTITLEMENTS" --sign - "$APP"
-    echo "Ad-hoc signed. Gatekeeper may require Control-click → Open; this bundle is not notarized."
+    echo "Ad-hoc signed. NOTE: users will lose Microphone and Accessibility on every"
+    echo "update, because an ad-hoc designated requirement pins the binary hash."
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 echo "Built $APP"

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.5
+
+Permissions now survive updates, and setup says which one is blocking it.
+
+### Fixed
+
+- **Microphone and Accessibility no longer break on every update.** An ad-hoc
+  signature's designated requirement is the exact binary hash, so macOS treated
+  each new build as a different app and silently voided both permissions while
+  leaving the row visible and switched on in System Settings. Builds are now signed
+  with a fixed self-signed certificate, whose requirement names the bundle and the
+  certificate instead of the binary. Upgrading to this version costs one last
+  re-grant; after that they stick. Nothing about Gatekeeper changes: the app is
+  still unnotarized and Homebrew still clears the quarantine flag.
+- **Setup cannot dead-end on Accessibility.** Requesting access does nothing at
+  all once macOS holds any decision for the app, including a row switched off, so
+  the Allow button was silently inert and the page waited forever. It now
+  recognises that state and says to remove the entry and grant it again.
+- **The permissions page names the permission that is blocking Continue.** With
+  the microphone outstanding it gave no indication that the microphone, not
+  Accessibility, was the gate.
+
 ## 0.1.4
 
 Setup could strand you on the permissions step with Accessibility switched on.

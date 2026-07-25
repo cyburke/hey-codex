@@ -219,6 +219,29 @@ final class AppController {
     /// Relaunch so a freshly granted Accessibility permission takes effect. The
     /// replacement is started before this instance exits so the menu bar icon
     /// does not disappear on the user mid-setup.
+    /// What macOS reports to THIS process about the two permission gates. The
+    /// setup page can only ever reflect these two values, so when it appears
+    /// stuck this is the ground truth to read first.
+    func logPermissionState(_ note: String) {
+        // Also to a file: the unified log was silent for this process, and a
+        // permissions page that appears stuck needs the two API values on paper.
+        let line = "\(Date()) [\(note)] AXIsProcessTrusted=\(AXIsProcessTrusted())"
+            + " CGPreflightPostEventAccess=\(CGPreflightPostEventAccess())"
+            + " mic=\(self.microphoneAuthorization) state=\(self.setupState)"
+            + " relaunchedArg=\(self.didRelaunchAfterAccessibilityGrant)\n"
+        let url = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HeyCodex/permissions-debug.txt")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile(); handle.write(Data(line.utf8)); try? handle.close()
+        } else {
+            try? line.data(using: .utf8)?.write(to: url)
+        }
+        Log.launch.error("""
+            perm[\(note, privacy: .public)]             AXIsProcessTrusted=\(AXIsProcessTrusted(), privacy: .public)             CGPreflightPostEventAccess=\(CGPreflightPostEventAccess(), privacy: .public)             mic=\(String(describing: self.microphoneAuthorization), privacy: .public)             state=\(String(describing: self.setupState), privacy: .public)             relaunchedArg=\(self.didRelaunchAfterAccessibilityGrant, privacy: .public)
+            """)
+    }
+
     /// True in the instance an automatic post-grant relaunch started. If the
     /// Accessibility state has still not cleared in that instance, relaunching
     /// again cannot help.
@@ -226,9 +249,11 @@ final class AppController {
         CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
     }
 
-    /// The grant is recorded but does not apply to this build. See AccessibilityGrant.
+    /// The grant is recorded but does not apply to this build, or a relaunch
+    /// already happened and the process is still stuck either way. See
+    /// AccessibilityGrant.isStuck.
     var accessibilityGrantIsStale: Bool {
-        AccessibilityGrant.isStale(state: setupState,
+        AccessibilityGrant.isStuck(state: setupState,
                                   alreadyRelaunched: didRelaunchAfterAccessibilityGrant)
     }
 

@@ -40,6 +40,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private let axRow = PermissionRow(title: "Accessibility",
                                       reason: "So it can press the ChatGPT Voice hotkey on your behalf. That is all it does with this.")
     private let permissionsStack = NSStackView()
+    /// The escape hatch. Granting Accessibility by adding the app in System
+    /// Settings, rather than through the app's own prompt, does not always reach
+    /// a process that is already running: `AXIsProcessTrusted` keeps saying no,
+    /// so the automatic post-grant relaunch never triggers and setup has no way
+    /// forward. A restart the user can press does not depend on macOS
+    /// volunteering anything.
+    private let restartButton = NSButton(title: "Already allowed it? Restart Hey Codex",
+                                        target: nil, action: nil)
 
     /// The hotkey editor lives on the test page. Telling people to change
     /// ChatGPT to suit us is backwards: plenty already have a Voice hotkey they
@@ -111,6 +119,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         permissionsStack.spacing = 12
         permissionsStack.addArrangedSubview(micRow.view)
         permissionsStack.addArrangedSubview(axRow.view)
+        restartButton.bezelStyle = .rounded
+        restartButton.target = self
+        restartButton.action = #selector(restartToPickUpPermissions)
+        permissionsStack.addArrangedSubview(restartButton)
         micRow.onAction = { [weak self] in self?.grantMicrophone() }
         axRow.onAction = { [weak self] in
             guard let self else { return }
@@ -217,15 +229,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         permissionsStack.isHidden = false
         hotkeyStack.isHidden = true
         refreshPermissionRows()
-        detail.stringValue = controller.accessibilityGrantIsStale
-            ? "Hey Codex is listed under Accessibility, but macOS is not applying it to this version. That happens when the app is replaced by an update. Open Privacy & Security, Accessibility, select Hey Codex, remove it with the minus button, then come back and allow it again."
-            : "Heads up: after you allow Accessibility, Hey Codex restarts itself. macOS only hands a new permission to a freshly started app, so this is normal and the window will pop right back."
         primary.title = "Continue"
         primary.target = self
         primary.action = #selector(goToTest)
         primary.keyEquivalent = "\r"
         primary.isHidden = false
         primary.isEnabled = controller.setupState.isComplete
+        restartButton.isHidden = controller.setupState.isComplete
         secondary.title = "Not Now"
         secondary.target = self
         secondary.action = #selector(closeSetup)
@@ -280,22 +290,65 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         secondary.isHidden = false
     }
 
+    /// Restart so a fresh process reads the permissions macOS has recorded.
+    @objc private func restartToPickUpPermissions() {
+        controller.relaunch(reason: AppDelegate.accessibilityRelaunchArgument)
+    }
+
     private func refreshPermissionRows() {
         micRow.setGranted(controller.isMicrophoneAuthorized,
                           actionTitle: controller.needsMicrophoneSettings ? "Open Settings" : "Allow")
         switch controller.setupState {
         case .ready:
             axRow.setGranted(true, actionTitle: "Allow")
-        case .accessibilityPendingRelaunch where controller.accessibilityGrantIsStale:
-            // Recorded but not valid for this build. Send them to the pane, since
-            // clicking Allow again cannot fix it.
-            axRow.setGranted(false, actionTitle: "Open Settings")
         default:
             // Mid-grant, or not granted. Either way this is not done yet, and
             // showing a tick next to a disabled Continue button reads as a bug.
-            axRow.setGranted(false, actionTitle: "Allow")
+            // Once a relaunch has already been spent and it is still stuck -
+            // whether the row is stale for this build or the grant never
+            // landed at all - "Allow" cannot do anything further, so the
+            // button sends them to the pane instead of pretending otherwise.
+            axRow.setGranted(false, actionTitle: controller.accessibilityGrantIsStale ? "Open Settings" : "Allow")
         }
         primary.isEnabled = controller.setupState.isComplete
+        restartButton.isHidden = controller.setupState.isComplete
+        // Runs on every poll tick, not just when the page first renders, so the
+        // guidance updates the moment the state does - e.g. the instant a
+        // relaunch reveals the grant is stuck rather than only telling the
+        // user that after they come back and look again.
+        detail.stringValue = permissionsGuidance()
+    }
+
+    /// Names the permission actually blocking Continue and says why, in words
+    /// that match what is on screen. A disabled Continue button with no
+    /// explanation is how a first-time user ends up fighting the wrong
+    /// permission for an hour.
+    private func permissionsGuidance() -> String {
+        switch controller.setupState {
+        case .needsMicrophone:
+            return "Microphone is what's blocking Continue right now. Click Allow next to Microphone above - Accessibility comes after."
+        case .microphoneBlocked:
+            return "Microphone is what's blocking Continue: it is currently switched off. Click Open Settings next to Microphone above, turn it back on, then come back here."
+        case .needsAccessibility, .accessibilityPendingRelaunch:
+            if controller.accessibilityGrantIsStale {
+                return """
+                    Accessibility is what's blocking Continue. Hey Codex may already show as \
+                    allowed under Privacy & Security, Accessibility, but macOS is not applying \
+                    that to this build - that happens whenever the app gets replaced, including by \
+                    an update. Open that pane, and if Hey Codex is listed, turn it off and remove \
+                    it with the minus button. Then come back and click Allow again here.
+                    """
+            }
+            return """
+                Accessibility is what's blocking Continue. Click Allow next to Accessibility above. \
+                Unlike Microphone, macOS will not pop up a dialog for this one - it adds Hey Codex to \
+                Privacy & Security, Accessibility instead, switched off. Open that pane and turn the \
+                switch on: that is the step that actually grants it. As soon as it is on, this window \
+                relaunches itself automatically.
+                """
+        case .ready:
+            return ""
+        }
     }
 
     // MARK: - Polling

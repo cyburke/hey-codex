@@ -33,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let didRelaunchForAccessibility =
         CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
     private var isRefreshingMenu = false
+    /// Last observed Accessibility trust, so a grant landing can be noticed as a
+    /// change rather than as a state. One relaunch per process was not enough: if
+    /// the first one happens while the grant does not yet apply to this build, the
+    /// user is left with no way forward at all.
+    private var wasAccessibilityTrusted = AXIsProcessTrusted()
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
 
@@ -48,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         beginLaunchFlow()
         refreshMenu()
         controller.checkForUpdates(userInitiated: false)
+        controller.logPermissionState("launch")
         startSetupPolling()
         // Show the user where Hey Codex lives, once, on the very first launch
         // with setup outstanding. An accessory app that appears silently among
@@ -229,8 +235,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // macOS has recorded the grant but this process was told no and
                 // never will be told otherwise. The user already did their part,
                 // so finish it for them rather than asking for another click.
+                self.controller.logPermissionState("poll")
+                let trusted = AXIsProcessTrusted()
+                let justBecameTrusted = trusted && !self.wasAccessibilityTrusted
+                self.wasAccessibilityTrusted = trusted
+                // Relaunch on the first pending state, and again any time the
+                // grant newly lands. A user who removes and re-adds the row, as
+                // the stale-grant copy tells them to, has to be able to recover.
                 if self.controller.setupState == .accessibilityPendingRelaunch,
-                   !self.didRelaunchForAccessibility {
+                   !self.didRelaunchForAccessibility || justBecameTrusted {
                     self.setupPoll?.invalidate()
                     self.setupPoll = nil
                     self.controller.relaunch(reason: Self.accessibilityRelaunchArgument)
