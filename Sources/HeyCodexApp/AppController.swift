@@ -108,6 +108,9 @@ final class AppController {
     func selectInputDevice(uid: String?) throws {
         var updated = settings
         updated.inputDeviceUID = uid
+        updated.inputDeviceName = uid.flatMap { chosen in
+            availableInputDevices.first(where: { $0.uid == chosen })?.name
+        }
         try SettingsStore().save(updated)
         settings = updated
         if isListening { stopPipeline(); startListening() }

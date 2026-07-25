@@ -164,8 +164,10 @@ final class SettingsWindowController: NSWindowController {
             inputDevice.selectItem(at: index)
         } else if let chosen {
             // Saved but not plugged in. Keep it listed and selected rather than
-            // silently rewriting the preference, so reconnecting just works.
-            inputDevice.addItem(withTitle: "Not connected")
+            // silently rewriting the preference, so reconnecting just works. Name
+            // it, because a bare "Not connected" tells the user nothing.
+            let name = controller.settings.inputDeviceName ?? "Chosen microphone"
+            inputDevice.addItem(withTitle: "\(name) (not connected)")
             inputDeviceUIDs.append(chosen)
             inputDevice.selectItem(at: inputDeviceUIDs.count - 1)
         } else {
@@ -175,7 +177,8 @@ final class SettingsWindowController: NSWindowController {
         if devices.isEmpty {
             inputHint.stringValue = "No microphone is connected. Hey Codex cannot hear anything until one is."
         } else if controller.chosenInputUnavailable {
-            inputHint.stringValue = "That microphone is not connected right now, so Hey Codex is listening on \(controller.activeInputName ?? "another device"). It will switch back when you plug it in again."
+            let chosen = controller.settings.inputDeviceName ?? "Your chosen microphone"
+            inputHint.stringValue = "\(chosen) is not connected right now, so Hey Codex is listening on \(controller.activeInputName ?? "another microphone") instead. It will switch back on its own when \(chosen) reconnects. Pick Automatic if you would rather it stopped waiting."
         } else if let active = controller.activeInputName {
             inputHint.stringValue = "Listening on \(active). Bluetooth headsets and USB mics show up here once connected."
         } else {

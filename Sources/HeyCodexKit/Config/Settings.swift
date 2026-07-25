@@ -71,6 +71,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Chosen microphone, by AVFoundation unique ID. Nil follows the system
     /// default, which is what most people want.
     public var inputDeviceUID: String?
+    /// Its name when it was chosen. Persisted so a disconnected device can be
+    /// named in the UI; an ID alone leaves the user staring at "Not connected"
+    /// with no idea what is missing.
+    public var inputDeviceName: String?
     public var lastUpdateCheck: Date?
 
     public init(projectDirectory: String = NSHomeDirectory(),
@@ -96,6 +100,7 @@ public struct Settings: Codable, Equatable, Sendable {
                 voicePanelDetectionProven: Bool = false,
                 automaticUpdateChecks: Bool = true,
                 inputDeviceUID: String? = nil,
+                inputDeviceName: String? = nil,
                 lastUpdateCheck: Date? = nil) {
         self.projectDirectory = projectDirectory
         self.preferredTarget = preferredTarget
@@ -120,6 +125,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.voicePanelDetectionProven = voicePanelDetectionProven
         self.automaticUpdateChecks = automaticUpdateChecks
         self.inputDeviceUID = inputDeviceUID
+        self.inputDeviceName = inputDeviceName
         self.lastUpdateCheck = lastUpdateCheck
     }
 
@@ -176,6 +182,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.automaticUpdateChecks = try container.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks)
             ?? true
         self.inputDeviceUID = try container.decodeIfPresent(String.self, forKey: .inputDeviceUID)
+        self.inputDeviceName = try container.decodeIfPresent(String.self, forKey: .inputDeviceName)
         self.lastUpdateCheck = try container.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
     }
 
