@@ -156,19 +156,36 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         window?.layoutIfNeeded()
     }
 
+
+    /// Body copy with room to breathe. A plain wrapping label packs lines flush
+    /// together, which turns a short list into a wall.
+    private func setBody(_ text: String) {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 5
+        style.paragraphSpacing = 9
+        body.attributedStringValue = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: style,
+        ])
+    }
+
     private func renderWelcome() {
         progressLabel.stringValue = "STEP 1 OF 3"
         heading.stringValue = "Welcome to Hey Codex"
-        body.stringValue = """
-            Say it. Voice opens. That is the whole tool.
+        // Name the default phrase, not the enrolled one. This page also offers
+        // "Hey Jarvis" as the example of a custom phrase, so interpolating a
+        // user's own phrase here reads as a contradiction.
+        setBody("""
+            Say your launch phrase and Voice opens from anywhere.
 
-            🎙  Listens for “\(controller.settings.wakePhrase)” and nothing else
+            🎙  Listens for “Hey Codex” and nothing else
             🔒  Runs offline on this Mac. No recording, no uploads, no account
-            ⌨️  Presses the same Voice hotkey you would press yourself
-            ✨  Want “Hey Jarvis” instead? You can record your own later
+            ⌨️  Activates the same Voice hotkey you would press yourself
+            ✨  Want a custom phrase like “Hey Jarvis” instead? Do it in Settings
 
-            Two permissions, about a minute, and you are done.
-            """
+            Just needs two permissions, setup in about a minute, and you are done.
+            """)
         permissionsStack.isHidden = true
         hotkeyStack.isHidden = true
         detail.stringValue = ""
@@ -186,10 +203,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
     private func renderPermissions() {
         progressLabel.stringValue = "STEP 2 OF 3"
         heading.stringValue = "Two quick permissions"
-        body.stringValue = """
+        setBody("""
             macOS will ask about each one separately. Grant them below and this page \
             ticks along with you, so there is nothing to come back and confirm.
-            """
+            """)
         permissionsStack.isHidden = false
         hotkeyStack.isHidden = true
         refreshPermissionRows()
@@ -211,10 +228,10 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         heading.stringValue = "Match the Voice hotkey"
         permissionsStack.isHidden = true
         if !controller.isChatGPTInstalled {
-            body.stringValue = """
+            setBody("""
                 Hey Codex works by pressing a hotkey inside the ChatGPT desktop app, and it \
                 is not installed on this Mac yet. Grab it first and then come back here.
-                """
+                """)
             hotkeyStack.isHidden = true
             detail.stringValue = ""
             primary.title = "Get ChatGPT for Mac"
@@ -227,13 +244,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             secondary.isHidden = false
             return
         }
-        body.stringValue = """
+        setBody("""
             Last thing: Hey Codex needs to know which hotkey opens Voice in ChatGPT, because \
             that is the key it presses for you.
 
             Check ChatGPT under Settings, then Voice. If it already shows a Voice chat hotkey, \
             set the same one below. If it is empty, set it to anything and match it here.
-            """
+            """)
         hotkeyStack.isHidden = false
         loadHotkeyFields()
         detail.attributedStringValue = hint("""
@@ -381,14 +398,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             switch result {
             case .success:
                 self.heading.stringValue = "You're all set 🎉"
-                self.body.stringValue = """
+                self.setBody("""
                     ChatGPT Voice should have just opened. Now try it for real: say \
                     “\(self.controller.settings.wakePhrase)” out loud from any app.
 
                     🔍  Look for the small icon in your menu bar. That is home now.
                     ✨  Change your phrase, tune sensitivity, or re-test from there.
                     🙌  That is everything. Go talk to it.
-                    """
+                    """)
                 self.detail.attributedStringValue = self.hint("""
                     Nothing opened? Then ChatGPT's Voice chat hotkey is not \(self.controller.settings.voiceShortcut.displayString) after all.
 

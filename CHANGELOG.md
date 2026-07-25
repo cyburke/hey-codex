@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3
+
+Setup copy, after watching a first run on a clean machine.
+
+### Fixed
+
+- The welcome page named whichever phrase you had enrolled, so someone who had
+  switched to "Hey Jarvis" was told it listens for "Hey Jarvis" on the same page
+  that offers "Hey Jarvis" as the example of a custom phrase. It names the
+  default now.
+- Setup body text had no line spacing, so a list of four points ran together.
+
+### Changed
+
+- Plainer opening line on the welcome page, and the custom-phrase point says
+  where to change it.
+
 ## 0.1.2
 
 Setup and audio, both rebuilt after a full walkthrough on a clean machine found
