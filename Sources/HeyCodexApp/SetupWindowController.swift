@@ -41,6 +41,12 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
                                       reason: "So it can press the ChatGPT Voice hotkey for you.")
     private let permissionsStack = NSStackView()
 
+    /// The page a fresh window should open on. Reopening a finished setup from
+    /// the menu must not march the user through the welcome text again.
+    static func startingPage(for controller: AppController) -> Page {
+        controller.setupState.isComplete ? .test : .welcome
+    }
+
     init(controller: AppController, startAt page: Page = .welcome, finished: @escaping () -> Void) {
         self.controller = controller
         self.finished = finished
@@ -101,7 +107,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         root.addArrangedSubview(permissionsStack)
 
         detail.font = .systemFont(ofSize: 12)
-        detail.textColor = .secondaryLabelColor
+        detail.textColor = .labelColor
         detail.preferredMaxLayoutWidth = 490
         detail.maximumNumberOfLines = 0
         root.addArrangedSubview(detail)
@@ -133,13 +139,14 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
         progressLabel.stringValue = "STEP 1 OF 3"
         heading.stringValue = "Hey Codex"
         body.stringValue = """
-            Say “\(controller.settings.wakePhrase)” and ChatGPT Voice opens. That is the whole tool.
+            Say it. Voice opens. That is the whole tool.
 
-            It listens on this Mac using a small offline model. Nothing is recorded, nothing is \
-            uploaded, and there is no account. When it hears the phrase it presses the same Voice \
-            hotkey you would press yourself.
+            🎙  Listens for “\(controller.settings.wakePhrase)” and nothing else
+            🔒  Runs offline on this Mac. No recording, no uploads, no account
+            ⌨️  Presses the same Voice hotkey you would press yourself
+            ✨  Want “Hey Jarvis” instead? You can record your own later
 
-            Setting it up takes two permissions and about a minute.
+            Two permissions, about a minute, and you are done.
             """
         permissionsStack.isHidden = true
         detail.stringValue = ""
@@ -191,12 +198,15 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         body.stringValue = """
-            In ChatGPT, open Settings then Voice, and make sure the Voice chat hotkey is \
-            \(controller.settings.voiceShortcut.displayString). Hey Codex presses exactly that, so the two have to match.
+            One quick check and you are finished.
 
-            Then run one test.
+            1.  In ChatGPT, open Settings then Voice
+            2.  Set the Voice chat hotkey to \(controller.settings.voiceShortcut.displayString)
+            3.  Press the button below
+
+            Hey Codex presses exactly that hotkey, so the two have to match.
             """
-        detail.stringValue = "Prefer a different phrase? Choose Use My Own Wake Phrase from the menu bar and record your own."
+        detail.stringValue = "✨  Not a fan of “Hey Codex”? Pick Use My Own Wake Phrase from the menu bar, say “Hey Jarvis” three times, and that becomes your phrase."
         primary.title = "Test ChatGPT Voice"
         primary.target = self
         primary.action = #selector(runTest)
@@ -285,7 +295,7 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func runTest() {
         primary.isEnabled = false
-        primary.title = "Testing…"
+        primary.title = controller.isChatGPTRunning ? "Testing…" : "Starting ChatGPT…"
         controller.testVoiceShortcut { [weak self] result in
             guard let self else { return }
             self.primary.isEnabled = true
@@ -295,13 +305,13 @@ final class SetupWindowController: NSWindowController, NSWindowDelegate {
             case .success:
                 self.heading.stringValue = "You are all set"
                 self.body.stringValue = """
-                    If ChatGPT Voice just opened, everything works. Say \
-                    “\(self.controller.settings.wakePhrase)” any time and it will open again.
+                    Voice should have just opened. Try it for real: say \
+                    “\(self.controller.settings.wakePhrase)” from any app.
 
-                    Hey Codex now lives in your menu bar. That is where you change the wake phrase, \
-                    adjust sensitivity, or run this test again.
+                    🔍  Everything lives in the menu bar icon from now on
+                    ✨  Change the phrase, tune sensitivity, or re-test from there
                     """
-                self.detail.stringValue = "Nothing happened? The hotkey in ChatGPT does not match \(self.controller.settings.voiceShortcut.displayString). Fix it there and test again."
+                self.detail.stringValue = "Nothing opened? The hotkey in ChatGPT does not match \(self.controller.settings.voiceShortcut.displayString). Fix it there and test again."
                 self.primary.title = "Test Again"
                 self.secondary.title = "Done"
                 self.secondary.keyEquivalent = "\r"

@@ -32,21 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// a failed grant from restarting the app in a loop.
     private let didRelaunchForAccessibility =
         CommandLine.arguments.contains("--relaunched-after-accessibility-grant")
-    private var announceReadyWhenComplete = true
-    /// Setup just finished. Say so in the menu bar for a few seconds, because a
-    /// silent transition leaves the user with no idea whether it worked.
-    private var readyBannerUntil: Date?
-    private var previousSetupComplete = false
-    private var bannerTimer: Timer?
-    /// Shown the moment a wake phrase is heard. Without it the user says the
-    /// phrase, the green prompt vanishes, and nothing visibly acknowledges that
-    /// anything was heard at all.
-    private var wakeBannerUntil: Date?
-    private var wakeBannerTimer: Timer?
-    private var previousStatus: AppController.Status?
-    /// Seeded from the current value so an install that is already verified does
-    /// not re-announce itself on every launch.
-    private lazy var previousVerified: Bool = controller.isVoiceStateVerified
     private var isRefreshingMenu = false
     static let accessibilityRelaunchArgument = "--relaunched-after-accessibility-grant"
     private let menu = NSMenu()
@@ -71,12 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // works regardless of activation state. Programmatically opening the
         // menu at launch does not, so it is not relied on.
         if didRelaunchForAccessibility {
-            announceReadyWhenComplete = false
             // Came back from the automatic post-grant relaunch: pick the flow up
             // where it left off rather than leaving a blank menu bar.
             showSetup(startAt: .permissions)
         } else if controller.needsFirstRunSetup {
-            showSetup()
+            // Open on the first unfinished step. Permissions carry over a
+            // reinstall, so a returning user should land on the test, not be
+            // walked through the welcome text again.
+            showSetup(startAt: SetupWindowController.startingPage(for: controller))
         }
     }
 
@@ -90,8 +77,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         isRefreshingMenu = true
         defer { isRefreshingMenu = false }
 
-        noticeWakeIfStarting()
-        noticeFirstVerifiedLaunch()
         menu.removeAllItems()
         let state = controller.setupState
 
@@ -204,52 +189,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshStatusIcon(_ state: SetupState) {
-        // An icon alone cannot say "you still need to do something here", and a
-        // lone symbol among a dozen menu bar symbols goes unnoticed. During
-        // setup the item carries bracketed, coloured text instead.
-        // Numbered steps so progress is visible from the menu bar alone. After
-        // granting the microphone the label has to visibly change, or it looks
-        // like nothing happened.
-        let label: String
-        let tint: NSColor?
-        switch state {
-        case .needsMicrophone:
-            label = "<Set up Hey Codex: step 1 of 2>"
-            tint = .systemOrange
-        case .microphoneBlocked:
-            label = "<Microphone blocked: step 1 of 2>"
-            tint = .systemRed
-        case .needsAccessibility:
-            label = "<Set up Hey Codex: step 2 of 2>"
-            tint = .systemOrange
-        case .accessibilityPendingRelaunch:
-            label = "<Finishing setup...>"
-            tint = .systemOrange
-        case .ready:
-            if let until = wakeBannerUntil, Date() < until {
-                label = "<Opening ChatGPT Voice...>"
-                tint = .systemBlue
-            } else if !controller.isVoiceStateVerified {
-                // Outstanding business, not a notification. It stays until a
-                // launch has actually been seen to work, exactly as the setup
-                // label stays until the permissions are granted.
-                label = "<Ready: click to test>"
-                tint = .systemOrange
-            } else if let until = readyBannerUntil, Date() < until {
-                // The one genuinely transient message: setup just finished.
-                label = "<All set. Say \u{201C}\(controller.settings.wakePhrase)\u{201D} anytime>"
-                tint = .systemGreen
-            } else {
-                label = ""
-                tint = nil
-                readyBannerUntil = nil
-                wakeBannerUntil = nil
-            }
-        }
-
+        // No coloured labels. Setup is a window now, and everything is managed by
+        // clicking this icon, so the icon should look like one thing that always
+        // means the same thing rather than a status marquee.
         let name: String
         if !state.isComplete {
-            name = "exclamationmark.circle.fill"
+            name = "exclamationmark.circle"
         } else if !controller.isListening {
             name = "pause.circle"
         } else if controller.isArmed {
@@ -257,78 +202,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             name = "lock.fill"
         }
-
         guard let button = statusItem.button else { return }
-        button.imagePosition = label.isEmpty ? .imageOnly : .imageLeading
-        button.imageHugsTitle = true
-        if let tint {
-            button.attributedTitle = NSAttributedString(string: " " + label, attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: tint,
-            ])
-        } else {
-            button.attributedTitle = NSAttributedString(string: "")
-            button.title = ""
-        }
-
-        if var image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex") {
-            if let tint,
-               let coloured = image.withSymbolConfiguration(.init(paletteColors: [tint])) {
-                // A template image renders monochrome, so colour needs the flag off.
-                image = coloured
-                image.isTemplate = false
-            } else {
-                image.isTemplate = true
-            }
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        button.imagePosition = .imageOnly
+        if let image = NSImage(systemSymbolName: name, accessibilityDescription: "Hey Codex") {
+            image.isTemplate = true
             button.image = image
         }
-    }
-
-    /// Hold "Say “Hey Codex”" in the menu bar for long enough to be read, then
-    /// go back to the quiet icon.
-    private func announceReady() {
-        readyBannerUntil = Date().addingTimeInterval(20)
-        bannerTimer?.invalidate()
-        bannerTimer = Timer.scheduledTimer(withTimeInterval: 20.5, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.readyBannerUntil = nil
-                self?.refreshMenu()
-            }
-        }
-        refreshMenu()
-    }
-
-    /// The moment a launch is first observed to actually work, setup is over in
-    /// the way the user cares about. Say so: the permission banner fired earlier,
-    /// when the only honest thing to say was "click to test".
-    private func noticeFirstVerifiedLaunch() {
-        let verified = controller.isVoiceStateVerified
-        let shouldAnnounce = verified && !previousVerified
-        // Record the transition BEFORE announcing. announceReady refreshes the
-        // menu, which lands back here; a deferred assignment runs on the way out
-        // and so never breaks that loop.
-        previousVerified = verified
-        if shouldAnnounce { announceReady() }
-    }
-
-    /// Turn "the shortcut is being sent" into something the user can see.
-    private func noticeWakeIfStarting() {
-        let status = controller.status
-        let isNewWake = status == .activating && previousStatus != .activating
-        previousStatus = status
-        // Only worth announcing before a launch has been verified. After that the
-        // icon switching to the lock already says the wake was heard, and a text
-        // banner on every single phrase is just noise.
-        guard isNewWake, !controller.isVoiceStateVerified else { return }
-        readyBannerUntil = nil
-        wakeBannerUntil = Date().addingTimeInterval(4)
-        wakeBannerTimer?.invalidate()
-        wakeBannerTimer = Timer.scheduledTimer(withTimeInterval: 4.2, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.wakeBannerUntil = nil
-                self?.refreshMenu()
-            }
-        }
+        button.toolTip = state.isComplete
+            ? "Hey Codex - listening for “\(controller.settings.wakePhrase)”"
+            : "Hey Codex - setup not finished"
     }
 
     private func startSetupPolling() {
@@ -339,10 +223,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard !self.controller.setupState.isComplete else {
                     self.setupPoll?.invalidate()
                     self.setupPoll = nil
-                    if self.announceReadyWhenComplete {
-                        self.announceReadyWhenComplete = false
-                        self.announceReady()
-                    }
                     self.refreshMenu()
                     return
                 }
@@ -365,7 +245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSMenuItem(title: title, action: action, keyEquivalent: "")
     }
 
-    @objc private func openSetup() { showSetup() }
+    @objc private func openSetup() {
+        showSetup(startAt: SetupWindowController.startingPage(for: controller))
+    }
 
     @objc private func relaunchApp() { controller.relaunch() }
 
@@ -491,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        controller.needsFirstRunSetup ? reopenMenu() : openSettings()
+        controller.needsFirstRunSetup ? openSetup() : openSettings()
         return true
     }
 }

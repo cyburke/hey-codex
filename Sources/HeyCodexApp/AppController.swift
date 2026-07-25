@@ -76,13 +76,55 @@ final class AppController {
                                  canPostEvents: CGPreflightPostEventAccess())
     }
 
-    var needsFirstRunSetup: Bool { !setupState.isComplete }
+    /// Setup is finished when both permissions exist AND a launch has actually
+    /// been seen to work. Permissions alone is not enough: they survive a
+    /// reinstall, so an upgrade would look configured while never having proved
+    /// the hotkey matches.
+    var needsFirstRunSetup: Bool { !setupState.isComplete || !isVoiceStateVerified }
 
     private var microphoneAuthorization: MicrophoneAuthorization {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: return .authorized
         case .notDetermined: return .notDetermined
         default: return .denied
+        }
+    }
+
+    /// ChatGPT registers its Voice hotkey with Carbon when it launches, so a
+    /// hotkey press does nothing at all while the app is not running. Nothing to
+    /// post to, no error, no clue.
+    var isChatGPTRunning: Bool {
+        !NSRunningApplication.runningApplications(
+            withBundleIdentifier: VoicePanelObserver.chatGPTBundleIdentifier).isEmpty
+    }
+
+    /// Launch ChatGPT if needed and wait until it can actually receive a hotkey.
+    /// Completion carries false when it could not be started at all.
+    func ensureChatGPTRunning(completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+        if isChatGPTRunning { completion(true); return }
+        guard let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: VoicePanelObserver.chatGPTBundleIdentifier) else {
+            completion(false)
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        // Bring it up quietly. The user asked for Voice, not for a window.
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // Registering the Carbon hot key happens during startup, so a
+                // press sent too early lands nowhere. Wait for the app to say it
+                // finished launching, then give it a beat.
+                for _ in 0..<40 {
+                    if NSRunningApplication.runningApplications(
+                        withBundleIdentifier: VoicePanelObserver.chatGPTBundleIdentifier)
+                        .contains(where: { $0.isFinishedLaunching }) { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                try? await Task.sleep(for: .milliseconds(1200))
+                completion(self.isChatGPTRunning)
+            }
         }
     }
 
@@ -225,9 +267,28 @@ final class AppController {
     }
 
     func testVoiceShortcut(completion: @escaping @MainActor @Sendable (Result<Void, LaunchFailure>) -> Void = { _ in }) {
+        // A test is an explicit user action, so it starts from a clean slate. It
+        // used to refuse with "Voice is already active" whenever an earlier failed
+        // attempt had left the latch consumed, which is precisely when someone
+        // needs to run a test.
+        activation.rearm()
+        rearmWakeEngine()
         guard activation.beginLaunch() else {
-            status = .latched
-            completion(.failure(.shellFailed("Voice is already active. End it first, then choose Re-arm Voice before testing again.")))
+            completion(.failure(.shellFailed("Could not start a test just now. Try again in a moment.")))
+            return
+        }
+        guard isChatGPTRunning else {
+            activation.completeLaunch(success: false)
+            rearmWakeEngine()
+            ensureChatGPTRunning { [weak self] started in
+                guard let self else { return }
+                guard started else {
+                    self.status = .failed("ChatGPT is not running and could not be started.")
+                    completion(.failure(.shellFailed("ChatGPT is not running. Open it and try again.")))
+                    return
+                }
+                self.testVoiceShortcut(completion: completion)
+            }
             return
         }
         // Already open: posting the toggle here would close Voice and read as a
@@ -419,6 +480,22 @@ final class AppController {
     }
 
     private func sendLaunchShortcut() {
+        // No running ChatGPT means no registered hot key, so the press would go
+        // nowhere. Start it, then send.
+        guard isChatGPTRunning else {
+            status = .activating
+            ensureChatGPTRunning { [weak self] started in
+                guard let self else { return }
+                guard started else {
+                    self.activation.completeLaunch(success: false)
+                    self.rearmWakeEngine()
+                    self.status = .failed("ChatGPT is not running and could not be started.")
+                    return
+                }
+                self.postAndConfirmLaunch()
+            }
+            return
+        }
         // The user may have opened Voice themselves with the keyboard shortcut.
         // The shortcut is a toggle, so posting it again would close the session
         // they just started. Hold the latch and do nothing.
@@ -428,10 +505,15 @@ final class AppController {
             startPanelWatch()
             return
         }
+        postAndConfirmLaunch()
+    }
+
+    private func postAndConfirmLaunch() {
         postVoiceShortcut { [weak self] result in
             guard let self else { return }
             guard result.isSuccess else {
                 self.activation.completeLaunch(success: false)
+                self.rearmWakeEngine()
                 self.status = .failed(result.failureDescription)
                 return
             }
@@ -455,9 +537,16 @@ final class AppController {
             startPanelWatch()
             return
         }
-        // Never having seen a panel here means absence proves nothing - this
-        // ChatGPT build may not expose the signal at all. Behave exactly as the
-        // helper did before detection existed: assume the post landed.
+        // If ChatGPT is running and its windows are enumerable, a missing panel is
+        // real evidence even on a first attempt, and latching would strand the
+        // user believing a session is open. Only an unproven detector with no
+        // running ChatGPT justifies assuming the post landed.
+        if isChatGPTRunning {
+            activation.completeLaunch(success: false)
+            rearmWakeEngine()
+            status = .failed("Voice did not open. Check that \(settings.voiceShortcut.displayString) is the Voice chat hotkey in ChatGPT.")
+            return
+        }
         guard trust.isProven else {
             activation.completeLaunch(success: true)
             status = .latched
