@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreAudio
 import Foundation
 import HeyCodexKit
 
@@ -54,6 +55,7 @@ final class AppController {
         settings = loaded
         trust = VoiceDetectionTrust(isProven: loaded.voicePanelDetectionProven)
         observeDeviceChanges()
+        observeDefaultInputChanges()
     }
 
     var isListening: Bool { audio != nil }
@@ -99,6 +101,7 @@ final class AppController {
     /// The microphone actually in use, which is not always the one chosen: a
     /// headset that has been unplugged falls back to another device.
     private(set) var activeInputName: String?
+    private var defaultInputListener: AudioObjectPropertyListenerBlock?
 
     var chosenInputUnavailable: Bool {
         AudioInputSelection.isPreferenceUnavailable(preferredUID: settings.inputDeviceUID,
@@ -114,6 +117,34 @@ final class AppController {
         try SettingsStore().save(updated)
         settings = updated
         if isListening { stopPipeline(); startListening() }
+    }
+
+    /// Follow the system input device while set to Automatic.
+    ///
+    /// Connect and disconnect notifications alone are not enough: with two
+    /// microphones already attached, changing the input in Sound settings fires
+    /// neither, so the app would carry on listening to the old one. Nobody should
+    /// have to come into this app and re-pick a microphone after plugging in
+    /// earbuds, so watch the default device itself.
+    private func observeDefaultInputChanges() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self, self.isListening else { return }
+                // Only meaningful when following the system default. An explicit
+                // choice should not be overridden by a system change.
+                guard self.settings.inputDeviceUID == nil else { return }
+                guard AudioCapture.systemDefaultInputUID != self.audio?.deviceUID else { return }
+                self.stopPipeline()
+                self.startListening()
+            }
+        }
+        defaultInputListener = block
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
+                                           &address, DispatchQueue.main, block)
     }
 
     /// Microphones appear and disappear while the app runs. Without this a

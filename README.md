@@ -87,6 +87,12 @@ Those three recordings never leave your Mac. They are there so the keyword can b
 
 Two or three words works best, since single words tend to go off when you did not mean them. Changing your mind is one button.
 
+## Earbuds and other microphones
+
+Nothing to configure. Hey Codex follows whichever microphone your Mac is using, so connect earbuds and it switches over on its own. Take them out and it switches back.
+
+If you would rather pin it to one specific microphone, Settings has a picker. A pinned device that gets unplugged falls back to another one so the app keeps working, and resumes the moment it reconnects.
+
 ## Privacy
 
 Wake-word detection runs on your Mac with a bundled offline model. No audio, no transcripts, no wake events, ever, to anyone. No analytics. No telemetry.

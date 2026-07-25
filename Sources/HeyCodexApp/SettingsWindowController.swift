@@ -160,7 +160,7 @@ final class SettingsWindowController: NSWindowController {
         let devices = controller.availableInputDevices
         inputDevice.removeAllItems()
         inputDeviceUIDs = [nil]
-        inputDevice.addItem(withTitle: "Automatic (follow system setting)")
+        inputDevice.addItem(withTitle: "Automatic (follows your Mac)")
         for device in devices {
             inputDevice.addItem(withTitle: device.name)
             inputDeviceUIDs.append(device.uid)
@@ -185,10 +185,13 @@ final class SettingsWindowController: NSWindowController {
         } else if controller.chosenInputUnavailable {
             let chosen = controller.settings.inputDeviceName ?? "Your chosen microphone"
             inputHint.stringValue = "\(chosen) is not connected right now, so Hey Codex is listening on \(controller.activeInputName ?? "another microphone") instead. It will switch back on its own when \(chosen) reconnects. Pick Automatic if you would rather it stopped waiting."
+        } else if controller.settings.inputDeviceUID == nil {
+            let active = controller.activeInputName ?? "your current microphone"
+            inputHint.stringValue = "Listening on \(active). Connect earbuds or a USB mic and Hey Codex follows your Mac automatically, so there is nothing to change here. Only pick a specific microphone if you want to override that."
         } else if let active = controller.activeInputName {
-            inputHint.stringValue = "Listening on \(active). Bluetooth headsets and USB mics show up here once connected."
+            inputHint.stringValue = "Locked to \(active), so Hey Codex will keep using it even if your Mac switches to something else. Choose Automatic to follow your Mac again."
         } else {
-            inputHint.stringValue = "Bluetooth headsets and USB microphones appear here once they are connected."
+            inputHint.stringValue = "Connect earbuds or a USB microphone and they will appear here."
         }
     }
 
