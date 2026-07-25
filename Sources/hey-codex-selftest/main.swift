@@ -134,6 +134,11 @@ func probeBundleModels(_ appPath: String) -> Bool {
         let control = try AudioSamples.load(kwsDir.appendingPathComponent("test_wavs/0.wav"))
         c.assert(!engine.detects(in: control),
                  "bundled engine fired on unrelated speech")
+        // Custom wake phrases are encoded at runtime from the bundled vocabulary.
+        // Without it, enrollment cannot build a keyword for anything the user types.
+        c.assertEqual(KeywordTokenizer.tokenize("hey codex", modelDir: kws) ?? "nil",
+                      "\u{2581}HE Y \u{2581}CO DE X",
+                      "the bundled app cannot encode a wake phrase")
         let size = (try? FileManager.default.subpathsOfDirectory(atPath: models.path)
             .compactMap { try? FileManager.default.attributesOfItem(
                 atPath: models.appendingPathComponent($0).path)[.size] as? Int }
@@ -231,11 +236,317 @@ final class Counter: @unchecked Sendable {
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
+/// Does a plain-text keyword work, given the BPE vocabulary?
+///
+/// This is the assumption the whole keyword design now rests on. Previously the
+/// app hand-wrote token splits like "▁HE Y ▁CO DE X" and enrollment derived them
+/// from what the model decoded, which produced nonsense such as "▁A GE ▁A R G US"
+/// for "Hey Jarvis". Canonical tokenisation removes the guesswork, but only if
+/// sherpa really accepts raw text here.
+/// Run: `swift run hey-codex-selftest bpe-keywords`
+func probeBpeKeywords() -> Bool {
+    run("keyword.plainTextWithBpeVocab") { c in
+        func spoken(_ phrase: String) throws -> [Float] {
+            let aiff = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kws-\(UUID().uuidString).aiff")
+            let wav = aiff.deletingPathExtension().appendingPathExtension("wav")
+            defer {
+                try? FileManager.default.removeItem(at: aiff)
+                try? FileManager.default.removeItem(at: wav)
+            }
+            let say = Process()
+            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            say.arguments = ["-v", "Samantha", "-o", aiff.path, phrase]
+            try say.run(); say.waitUntilExit()
+            let convert = Process()
+            convert.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+            convert.arguments = ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff.path, wav.path]
+            try convert.run(); convert.waitUntilExit()
+            return try AudioSamples.load(wav)
+        }
+
+        func keywordFile(_ contents: String) throws -> URL {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kw-\(UUID().uuidString).txt")
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }
+
+        let bpe = kwsDir.appendingPathComponent(KeywordTuning.bpeVocabName)
+        c.assert(FileManager.default.fileExists(atPath: bpe.path),
+                 "bpe.model missing from the model directory; plain text keywords cannot work without it")
+
+        let positive = try spoken("hey codex")
+        let negative = try spoken("the weather today is sunny and warm")
+
+        // Plain text, tokenised by sherpa using the BPE vocabulary.
+        let plain = try keywordFile("HEY CODEX\n")
+        let engine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: plain,
+                                        keywordsThreshold: KeywordTuning.threshold,
+                                        keywordsScore: KeywordTuning.score)
+        let firedOnPhrase = diagDetect(engine, positive, "plain-text keyword vs \"hey codex\"")
+        c.assert(firedOnPhrase, "a plain text keyword did not fire on the phrase it names")
+
+        let negEngine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: plain,
+                                          keywordsThreshold: KeywordTuning.threshold,
+                                          keywordsScore: KeywordTuning.score)
+        c.assert(!diagDetect(negEngine, negative, "plain-text keyword vs unrelated speech"),
+                 "plain text keyword fired on unrelated speech")
+
+        // Per-keyword score and threshold, the documented way to tune one keyword
+        // without moving a global dial that affects every other one.
+        let tuned = try keywordFile("HEY CODEX :1.5 #0.20\n")
+        let tunedEngine = try WakeWordEngine(modelDir: kwsDir, keywordsFile: tuned)
+        c.assert(diagDetect(tunedEngine, positive, "per-keyword :score #threshold"),
+                 "per-keyword score and threshold syntax was not accepted")
+    }
+}
+
+/// Does the app's keyword encoding match official sentencepiece, exactly?
+///
+/// A keyword that differs from the model's own encoding by a single token never
+/// fires, and nothing about it looks wrong. Checked two ways: against a few hundred
+/// encodings generated by Google sentencepiece, and against the keyword lines the
+/// model's authors shipped beside their plain-text originals.
+/// Run: `swift run hey-codex-selftest tokenizer`
+func probeTokenizer() -> Bool {
+    run("keyword.tokenizerMatchesSentencepiece") { c in
+        // Ground truth from official Google sentencepiece over this model's
+        // bpe.model. The app encodes with ssentencepiece inside the sherpa-onnx
+        // library; the two must agree exactly, because a keyword that differs by
+        // one token simply never fires.
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Tests/Fixtures/bpe-encodings.tsv")
+        guard let text = try? String(contentsOf: fixture, encoding: .utf8) else {
+            c.fail("missing \(fixture.path)"); return
+        }
+        var checked = 0, mismatches: [String] = []
+        for line in text.split(whereSeparator: \.isNewline) where !line.hasPrefix("#") {
+            let parts = line.split(separator: "\t", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let phrase = String(parts[0]), expected = String(parts[1])
+            checked += 1
+            let ours = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir)
+            if ours != expected, mismatches.count < 6 {
+                mismatches.append("  \(phrase)\n    sentencepiece: \(expected)\n    ours:          \(ours ?? "nil")")
+            }
+        }
+        for m in mismatches { print(m) }
+        c.assert(checked > 400, "fixture should cover a few hundred phrases, saw \(checked)")
+        c.assertEqual(mismatches.count, 0, "encodings disagree with sentencepiece")
+        print("  matched \(checked - mismatches.count)/\(checked) reference encodings")
+
+        // The model authors shipped their own keywords with the raw text beside
+        // them, which is an independent check on the same claim.
+        let raw = kwsDir.appendingPathComponent("keywords_raw.txt")
+        let shipped = kwsDir.appendingPathComponent("keywords.txt")
+        if let rawText = try? String(contentsOf: raw, encoding: .utf8),
+           let shippedText = try? String(contentsOf: shipped, encoding: .utf8) {
+            let phrases = rawText.split(whereSeparator: \.isNewline)
+            let lines = shippedText.split(whereSeparator: \.isNewline)
+            for (phrase, line) in zip(phrases, lines) {
+                let expected = line.split(separator: " :").first.map(String.init) ?? String(line)
+                c.assertEqual(KeywordTokenizer.tokenize(String(phrase), modelDir: kwsDir) ?? "nil",
+                              expected.trimmingCharacters(in: .whitespaces),
+                              "the model authors' own keyword for \(phrase)")
+            }
+            print("  reproduced \(min(phrases.count, lines.count)) of the model's shipped keyword lines")
+        }
+    }
+}
+
+/// Replays saved enrollment takes through the whole pipeline. Enrollment audio is
+/// only ever kept when someone opts in (see EnrollmentDiagnostics.keepsAudio), so
+/// this skips silently when there is nothing to replay. It exists so a rejected
+/// enrollment can be fixed without asking that person to record it again.
+func probeReplayEnrollment(_ phrase: String) -> Bool {
+    run("keyword.replayEnrollment") { c in
+        let dir = EnrollmentDiagnostics.audioDirectory
+        let takes = (1...3).map { dir.appendingPathComponent("take-\($0).wav") }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !takes.isEmpty else {
+            print("  [skip] no saved takes at \(dir.path)")
+            return
+        }
+        let clips = takes.compactMap { try? AudioSamples.load($0) }
+        c.assertEqual(clips.count, takes.count, "every saved take should load")
+        guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
+            c.fail("cannot tokenise \(phrase)"); return
+        }
+        let calibration = WakeCalibration(fires: { line, threshold, audio in
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("rp-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: file) }
+            try? (line + "\n").write(to: file, atomically: true, encoding: .utf8)
+            guard let e = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
+                                             keywordsThreshold: threshold) else { return false }
+            return e.detects(in: audio)
+        })
+        print("  phrase=\(phrase)")
+        print("  keyword=[\(tokens)]")
+        let verdict = WakePhraseFitness.check(tokens: tokens,
+                                             spoken: SynthesizedSpeech.samples(of: phrase),
+                                             negatives: SynthesizedSpeech.falseAlarmClips(),
+                                             fires: calibration.fires)
+        print("  fitness=\(verdict)")
+        let sweep = KeywordTuning.calibrationThresholds
+        let row = sweep.map { threshold in
+            clips.filter {
+                calibration.fires(WakeCalibration.keywordLine(tokens: tokens, threshold: threshold),
+                                  threshold, $0)
+            }.count
+        }
+        print("  takes fired: " + zip(sweep, row).map { String(format: "%.2f:%d", $0, $1) }
+                                                .joined(separator: " "))
+        let result = calibration.calibrate(tokens: tokens, samples: clips)
+        print(String(format: "  threshold=%.2f fired=%d/%d usable=%@",
+                     result.threshold, result.firedCount, result.sampleCount,
+                     result.isUsable ? "yes" : "NO"))
+        // Fitness is advisory: a warning that turns out to be wrong is fine, a
+        // clearance that turns out to be wrong is not.
+        if verdict == .good {
+            c.assert(result.isUsable, "fitness cleared this phrase but no recording of it fires")
+        }
+    }
+}
+
+
+func probeSynthFidelity() -> Bool {
+    run("keyword.synthFidelity") { c in
+        // The spotter is a 3.3M model and a poor transcriber; read the same clip
+        // with the full ASR too, so a claim about pronunciation rests on something
+        // that can actually transcribe.
+        let asr = try? ParakeetTranscriber(modelDir: asrDir)
+        for phrase in ["hey codex", "hey chatgpt", "hey chat gpt", "hey chat g p t",
+                       "hey jarvis", "hey xena"] {
+            guard let audio = SynthesizedSpeech.samples(of: phrase) else { continue }
+            let heard = KwsDebug.decodeTokens(modelDir: kwsDir, samples: audio)
+            let transcript = (try? asr?.transcribe(audio)) ?? "<no asr>"
+            print("  \(phrase.padding(toLength: 15, withPad: " ", startingAt: 0)) "
+                  + "kws=\"\(heard.text)\"".padding(toLength: 26, withPad: " ", startingAt: 0)
+                  + " asr=\"\(transcript)\"")
+        }
+    }
+}
+
+func probePhraseFitness() -> Bool {
+    run("keyword.phraseFitness") { c in
+
+        func fires(_ tokens: String, _ audio: [Float], threshold: Float) -> Bool {
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pf-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: file) }
+            try? (WakeCalibration.keywordLine(tokens: tokens) + "\n")
+                .write(to: file, atomically: true, encoding: .utf8)
+            guard let e = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
+                                             keywordsThreshold: threshold) else { return false }
+            return e.detects(in: audio)
+        }
+        let negatives = SynthesizedSpeech.falseAlarmClips()
+        let phrases = ["hey codex", "hey chatgpt", "hey siri", "hey jarvis", "hey computer",
+                       "ok codex", "hey samantha", "hey machine", "wake up codex",
+                       "hey assistant", "hey friday", "hey buddy", "hey xena", "hey there"]
+        print("  phrase           fallback  wakes@  falseAlarms  tokens")
+        for phrase in phrases {
+            guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
+                print("  \(phrase.padding(toLength: 16, withPad: " ", startingAt: 0)) unspellable")
+                continue
+            }
+            let fallback = tokens.split(separator: " ").contains { $0 == KeywordTokenizer.boundary }
+            guard let audio = SynthesizedSpeech.samples(of: phrase) else { continue }
+            var wakesAt = "never"
+            for threshold in KeywordTuning.calibrationThresholds where fires(tokens, audio, threshold: threshold) {
+                wakesAt = String(format: "%.2f", threshold); break
+            }
+            let alarms = negatives.filter { fires(tokens, $0, threshold: 0.25) }.count
+            print("  \(phrase.padding(toLength: 16, withPad: " ", startingAt: 0)) "
+                  + "\(fallback ? "YES     " : "no      ") \(wakesAt.padding(toLength: 7, withPad: " ", startingAt: 0)) "
+                  + "\(alarms)            [\(tokens)]")
+            // The claim the UI relies on: the fitness check agrees with what the
+            // sweep and the negatives actually show for this phrase.
+            let verdict = WakePhraseFitness.check(tokens: tokens, spoken: audio,
+                                                 negatives: negatives, fires: { line, t, a in
+                fires(String(line.split(separator: " :")[0]), a, threshold: t)
+            })
+            let expected: WakePhraseFitness.Verdict = alarms > 0 ? .tooCommon
+                : (wakesAt == "never" ? .cannotSpot : .good)
+            c.assertEqual(verdict, expected, "fitness disagrees with measurement for \(phrase)")
+            _ = fallback
+        }
+    }
+}
+
+func probeTuning() -> Bool {
+    run("keyword.tuningGrid") { c in
+        func spoken(_ phrase: String) throws -> [Float] {
+            let aiff = FileManager.default.temporaryDirectory
+                .appendingPathComponent("t-\(UUID().uuidString).aiff")
+            let wav = aiff.deletingPathExtension().appendingPathExtension("wav")
+            defer {
+                try? FileManager.default.removeItem(at: aiff)
+                try? FileManager.default.removeItem(at: wav)
+            }
+            let say = Process()
+            say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            say.arguments = ["-v", "Samantha", "-o", aiff.path, phrase]
+            try say.run(); say.waitUntilExit()
+            let cv = Process()
+            cv.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+            cv.arguments = ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff.path, wav.path]
+            try cv.run(); cv.waitUntilExit()
+            return try AudioSamples.load(wav)
+        }
+        guard let tokens = KeywordTokenizer.tokenize("hey codex", modelDir: kwsDir) else {
+            c.fail("tokenisation failed"); return
+        }
+        let positive = try spoken("hey codex")
+        let negatives = [
+            try spoken("the weather today is sunny and warm"),
+            try spoken("I can help you with that"),
+            try spoken("hey there how are you doing"),
+            try spoken("let me check the codebase for you"),
+        ]
+
+        func detects(_ audio: [Float], score: Float, threshold: Float, blanks: Int) -> Bool {
+            let file = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kw-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: file) }
+            try? (WakeCalibration.keywordLine(tokens: tokens, score: score) + "\n")
+                .write(to: file, atomically: true, encoding: .utf8)
+            guard let e = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
+                                             keywordsThreshold: threshold,
+                                             keywordsScore: score,
+                                             numTrailingBlanks: blanks) else { return false }
+            return e.detects(in: audio)
+        }
+
+        print("  score thresh blanks | wake? falseAlarms")
+        var recommended: (Float, Float, Int)?
+        for score in [Float(1.0), 1.5, 2.0] {
+            for threshold in [Float(0.25), 0.20, 0.15] {
+                for blanks in [1, 2] {
+                    let woke = detects(positive, score: score, threshold: threshold, blanks: blanks)
+                    let false_ = negatives.filter { detects($0, score: score, threshold: threshold, blanks: blanks) }.count
+                    print(String(format: "  %.1f   %.2f   %d      | %@   %d",
+                                 score, threshold, blanks, woke ? "yes" : "NO ", false_))
+                    if woke, false_ == 0, recommended == nil { recommended = (score, threshold, blanks) }
+                }
+            }
+        }
+        if let r = recommended {
+            print(String(format: "  [diag] strictest setting that wakes with zero false alarms: score=%.1f threshold=%.2f blanks=%d", r.0, r.1, r.2))
+        }
+        c.assert(recommended != nil, "no combination woke on the phrase without false alarms")
+    }
+}
+
 func checkWakePhraseDefaults() -> Bool {
     run("wakePhrase.defaults") { c in
         c.assertEqual(Settings.default.wakePhrase, "Hey Codex",
                       "Hey Codex must remain the release default")
-        c.assertEqual(WakePhrase.presets, ["Hey Codex", "Hey ChatGPT", "Hey Jarvis"])
+        c.assertEqual(WakePhrase.presets, ["Hey Codex", "Hey Jarvis", "Hey Computer"])
     }
 }
 
@@ -419,36 +730,44 @@ func probeEnroll() -> Bool {
     }
 
     let samples: [WakeEnrollment.Sample] = [
-        .init(audio: recordOne("Isolated 1 - say \"Hey Claude\" NOW…"), kind: .isolated),
-        .init(audio: recordOne("Isolated 2 - say \"Hey Claude\" NOW…"), kind: .isolated),
-        .init(audio: recordOne("Natural - say \"Hey Claude\" and ask for something…"), kind: .natural),
+        .init(audio: recordOne("Isolated 1 - say the phrase NOW…"), kind: .isolated),
+        .init(audio: recordOne("Isolated 2 - say the phrase NOW…"), kind: .isolated),
+        .init(audio: recordOne("Natural - say the phrase and ask for something…"), kind: .natural),
     ]
 
-    let enroll = WakeEnrollment(
-        decode: { s in KwsDebug.decodeTokens(modelDir: kws, samples: s).tokens },
-        fires: { lines, threshold, audio in
-            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("hc-enroll-kw.txt")
-            try? (lines.joined(separator: "\n") + "\n").write(to: tmp, atomically: true, encoding: .utf8)
-            guard let e = try? WakeWordEngine(modelDir: kws, keywordsFile: tmp,
-                                              keywordsThreshold: threshold, keywordsScore: 2.0)
-            else { return false }
-            return e.detects(in: audio)
-        })
-
-    let r = enroll.enroll(samples: samples)
-    print("\n  === ENROLLMENT RESULT (dry run - not saved) ===")
-    print("  keyword lines:"); for l in r.keywordLines { print("    \(l)") }
-    print("  threshold: \(r.threshold)")
-    print("  all samples fire: \(r.allFired ? "✅ YES" : "❌ NO")")
-    print("  derived from voice: \(r.usedFallbackOnly ? "NO (fallback only)" : "YES")")
-    print("\n  per-sample (at threshold \(r.threshold)):")
-    let labels = ["isolated-1", "isolated-2", "natural   "]
-    for (i, s) in samples.enumerated() {
-        let toks = KwsDebug.decodeTokens(modelDir: kws, samples: s.audio).tokens
-        let f = enroll.fires(r.keywordLines, r.threshold, s.audio)
-        print("    \(labels[i]): fires \(f ? "✅" : "❌")   tokens=\(toks)")
+    let phrase = CommandLine.arguments.dropFirst(2).joined(separator: " ")
+    let spoken = phrase.isEmpty ? "hey codex" : phrase
+    guard let tokens = KeywordTokenizer.tokenize(spoken, modelDir: kws) else {
+        print("  cannot tokenise \(spoken)"); return false
     }
-    return true
+    let calibration = WakeCalibration(fires: { line, threshold, audio in
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("hc-enroll-kw.txt")
+        try? (line + "\n").write(to: tmp, atomically: true, encoding: .utf8)
+        guard let e = try? WakeWordEngine(modelDir: kws, keywordsFile: tmp,
+                                          keywordsThreshold: threshold)
+        else { return false }
+        return e.detects(in: audio)
+    })
+
+    let verdict = WakePhraseFitness.check(tokens: tokens,
+                                         spoken: SynthesizedSpeech.samples(of: spoken),
+                                         negatives: SynthesizedSpeech.falseAlarmClips(),
+                                         fires: calibration.fires)
+    let r = calibration.calibrate(tokens: tokens, samples: samples.map(\.audio))
+    print("\n  === ENROLLMENT RESULT (dry run - not saved) ===")
+    print("  phrase: \(spoken)")
+    print("  keyword: \(r.keywordLine)")
+    print("  fitness: \(verdict)")
+    print("  threshold: \(r.threshold)")
+    print("  takes firing: \(r.firedCount)/\(r.sampleCount)   usable: \(r.isUsable ? "YES" : "NO")")
+    let labels = ["isolated-1", "isolated-2", "natural   "]
+    for (i, sample) in samples.enumerated() {
+        let toks = KwsDebug.decodeTokens(modelDir: kws, samples: sample.audio).tokens
+        let f = calibration.fires(WakeCalibration.keywordLine(tokens: tokens, threshold: r.threshold),
+                                  r.threshold, sample.audio)
+        print("    \(labels[i]): fires \(f ? "yes" : "NO ")   heardAs=\(WakeEnrollment.keywordLine(from: toks))")
+    }
+    return r.isUsable
 }
 
 // DIAG 1 - audio sanity: transcribe the EXACT wake clip used by the wake test.
@@ -728,6 +1047,25 @@ func main() -> Int32 {
         let editorArg = CommandLine.arguments.dropFirst(2).first ?? "Cursor"
         let editor = EditorKind(rawValue: editorArg) ?? .cursor
         return probeEditorOpenLive(editor) ? 0 : 1
+    }
+    if requested == "synth-fidelity" {
+        return probeSynthFidelity() ? 0 : 1
+    }
+    if requested == "phrase-fitness" {
+        return probePhraseFitness() ? 0 : 1
+    }
+    if requested == "replay-enrollment" {
+        let phrase = CommandLine.arguments.dropFirst(2).joined(separator: " ")
+        return probeReplayEnrollment(phrase.isEmpty ? "hey codex" : phrase) ? 0 : 1
+    }
+    if requested == "tuning" {
+        return probeTuning() ? 0 : 1
+    }
+    if requested == "tokenizer" {
+        return probeTokenizer() ? 0 : 1
+    }
+    if requested == "bpe-keywords" {
+        return probeBpeKeywords() ? 0 : 1
     }
     if requested == "audio-footprint" {
         return probeAudioFootprint() ? 0 : 1

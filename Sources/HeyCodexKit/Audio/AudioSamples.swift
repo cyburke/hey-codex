@@ -37,4 +37,25 @@ public enum AudioSamples {
         let ptr = outBuffer.floatChannelData![0]
         return Array(UnsafeBufferPointer(start: ptr, count: Int(outBuffer.frameLength)))
     }
+
+    /// Writes mono 16 kHz samples as a 16-bit WAV. Used only by the opt-in
+    /// enrollment capture, so a failed enrollment can be replayed offline
+    /// instead of asking someone to record it again and again.
+    public static func write(_ samples: [Float], to url: URL) throws {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                  sampleRate: 16000, channels: 1, interleaved: false)!
+        let file = try AVAudioFile(forWriting: url,
+                                   settings: [AVFormatIDKey: kAudioFormatLinearPCM,
+                                              AVSampleRateKey: 16000,
+                                              AVNumberOfChannelsKey: 1,
+                                              AVLinearPCMBitDepthKey: 16,
+                                              AVLinearPCMIsFloatKey: false])
+        let buffer = AVAudioPCMBuffer(pcmFormat: format,
+                                      frameCapacity: AVAudioFrameCount(samples.count))!
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in
+            buffer.floatChannelData![0].update(from: src.baseAddress!, count: samples.count)
+        }
+        try file.write(from: buffer)
+    }
 }

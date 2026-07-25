@@ -32,16 +32,20 @@ cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$APP/Contents/Resources/"
 # 631 MB to a download for a capability the product does not have. Anything the
 # app needs at runtime must be added here explicitly, not swept in wholesale.
 #
-# Within the wake-word model, copy only the four files WakeWordEngine opens.
-# The released model directory also ships int8 variants, bpe.model, test WAVs,
-# and a README; none are loaded at runtime. Keep this list in sync with
-# WakeWordEngine.init - a missing file fails loudly there with .missingModelFile.
+# Within the wake-word model, copy only the files the app opens: the three onnx
+# models and tokens.txt for WakeWordEngine, plus bpe.vocab for KeywordTokenizer,
+# which encodes a wake phrase into model tokens. The released directory also ships
+# int8 variants, the bpe.model protobuf, test WAVs and a README; none are read at
+# runtime. bpe.vocab is generated from bpe.model by scripts/make-bpe-vocab.py and is
+# 12 KB. Keep in sync with WakeWordEngine.init and KeywordTokenizer - a missing file
+# fails loudly there.
 KWS_MODEL="sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
 KWS_FILES=(
     "encoder-epoch-12-avg-2-chunk-16-left-64.onnx"
     "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
     "joiner-epoch-12-avg-2-chunk-16-left-64.onnx"
     "tokens.txt"
+    "bpe.vocab"
 )
 if [ ! -f "$ROOT/Models/keywords.txt" ]; then
     echo "Missing Models/keywords.txt. Run ./scripts/fetch-models.sh before bundling." >&2

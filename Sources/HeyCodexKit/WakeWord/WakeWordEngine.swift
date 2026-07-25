@@ -17,10 +17,20 @@ public final class WakeWordEngine {
     ///     spotting a hard wake word on a small model; see
     ///     internal design notes for the calibrated value.
     ///   - maxActivePaths: beam width for the keyword spotter's modified search.
+    ///   - numTrailingBlanks: blank frames required after the keyword before it
+    ///     is finalised. Higher makes it wait for a pause, which cuts false
+    ///     triggers mid-sentence at the cost of a little latency.
+    ///   - modelingUnit: how sherpa interprets the keywords file. With "bpe" and
+    ///     a `bpeVocab`, keywords may be written as plain text and sherpa
+    ///     tokenises them canonically. Left at the library's "cjkchar" default
+    ///     this model was being handed Chinese-character rules for English text.
     public init(modelDir: URL, keywordsFile: URL,
-                keywordsThreshold: Float = 0.25,
-                keywordsScore: Float = 2.0,
-                maxActivePaths: Int = 4) throws {
+                keywordsThreshold: Float = KeywordTuning.threshold,
+                keywordsScore: Float = KeywordTuning.score,
+                maxActivePaths: Int = KeywordTuning.maxActivePaths,
+                numTrailingBlanks: Int = KeywordTuning.numTrailingBlanks,
+                modelingUnit: String = KeywordTuning.modelingUnit,
+                bpeVocabFile: String? = nil) throws {
         func path(_ name: String) throws -> String {
             let u = modelDir.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: u.path) else { throw Error.missingModelFile(name) }
@@ -32,17 +42,31 @@ public final class WakeWordEngine {
             encoder: try path("encoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
             decoder: try path("decoder-epoch-12-avg-2-chunk-16-left-64.onnx"),
             joiner:  try path("joiner-epoch-12-avg-2-chunk-16-left-64.onnx"))
+        // The BPE vocabulary is what lets a plain-text keyword be tokenised the
+        // same way the model was trained, instead of us guessing token splits.
+        let bpe = bpeVocabFile ?? (FileManager.default.fileExists(
+            atPath: modelDir.appendingPathComponent(KeywordTuning.bpeVocabName).path)
+            ? modelDir.appendingPathComponent(KeywordTuning.bpeVocabName).path : "")
+        if ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" {
+            let unit = bpe.isEmpty ? "cjkchar" : modelingUnit
+            let shown = bpe.isEmpty ? "<empty>" : bpe
+            FileHandle.standardError.write(Data("[swift] unit=\(unit) bpe=\(shown)\n".utf8))
+        }
         let model = sherpaOnnxOnlineModelConfig(
             tokens: try path("tokens.txt"),
             transducer: transducer,
             numThreads: 1,
-            provider: "cpu")
+            provider: "cpu",
+            debug: ProcessInfo.processInfo.environment["HEYCODEX_KWS_DEBUG"] == "1" ? 1 : 0,
+            modelingUnit: bpe.isEmpty ? "cjkchar" : modelingUnit,
+            bpeVocab: bpe)
         let feat = sherpaOnnxFeatureConfig(sampleRate: 16000, featureDim: 80)
         var config = sherpaOnnxKeywordSpotterConfig(
             featConfig: feat,
             modelConfig: model,
             keywordsFile: keywordsFile.path,
             maxActivePaths: maxActivePaths,
+            numTrailingBlanks: numTrailingBlanks,
             keywordsScore: keywordsScore,
             keywordsThreshold: keywordsThreshold)
         self.spotter = SherpaOnnxKeywordSpotterWrapper(config: &config)

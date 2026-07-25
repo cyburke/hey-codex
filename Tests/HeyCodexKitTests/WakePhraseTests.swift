@@ -6,9 +6,9 @@ final class WakePhraseTests: XCTestCase {
         XCTAssertEqual(Settings.default.wakePhrase, "Hey Codex")
     }
 
-    func test_presetsIncludeHeyJarvisAsAnOptionalPhrase() {
-        XCTAssertEqual(WakePhrase.presets, ["Hey Codex", "Hey ChatGPT", "Hey Jarvis"])
-        XCTAssertTrue(WakePhrase.isRecommended("Hey Jarvis"))
+    func test_presetsAreASmallSetOfSuggestions() {
+        XCTAssertEqual(WakePhrase.presets, ["Hey Codex", "Hey Jarvis", "Hey Computer"])
+        XCTAssertTrue(WakePhrase.presets.allSatisfy(WakePhrase.isRecommended))
     }
 
 }

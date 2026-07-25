@@ -19,6 +19,11 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     /// be put back exactly as it was.
     private var resumeListening = false
     private var presetPicker: NSPopUpButton?
+    private var didSucceed = false
+    /// Whether the user has already been warned that this phrase looks unlikely to
+    /// work and chose to record it anyway.
+    private var acknowledgedRisk = false
+    private let titleLabel = NSTextField(labelWithString: "Pick your own wake phrase")
 
     init(controller: AppController, initialPhrase: String, finished: @escaping () -> Void) {
         self.controller = controller
@@ -45,9 +50,8 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         root.edgeInsets = NSEdgeInsets(top: 26, left: 28, bottom: 26, right: 28)
         window.contentView = root
 
-        let title = NSTextField(labelWithString: "Pick your own wake phrase")
-        title.font = .systemFont(ofSize: 19, weight: .semibold)
-        root.addArrangedSubview(title)
+        titleLabel.font = .systemFont(ofSize: 19, weight: .semibold)
+        root.addArrangedSubview(titleLabel)
         root.addArrangedSubview(NSTextField(wrappingLabelWithString: "Type anything you like, then say it three times so Hey Codex learns how you say it. Those recordings are used here on your Mac and then discarded."))
         let presets = NSPopUpButton(frame: .zero, pullsDown: false)
         presets.addItems(withTitles: WakePhrase.presets)
@@ -63,10 +67,14 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         phraseRow.spacing = 10
         root.addArrangedSubview(phraseRow)
         detail.textColor = .secondaryLabelColor
-        detail.stringValue = "Truly anything: “Hey Jarvis”, “Hey Computer”, “Yo Robot”, your cat's name. Two or three words works best, since single words tend to go off by accident."
+        detail.stringValue = "Anything short works: “Hey Jarvis”, “Wake Up Codex”, your own name for it. Two or three words treat you best, since single words tend to go off by accident."
         detail.maximumNumberOfLines = 0
         root.addArrangedSubview(detail)
         progress.font = .systemFont(ofSize: 14, weight: .medium)
+        progress.maximumNumberOfLines = 0
+        progress.preferredMaxLayoutWidth = 430
+        progress.lineBreakMode = .byWordWrapping
+        progress.widthAnchor.constraint(equalToConstant: 430).isActive = true
         progress.stringValue = "Ready when you are"
         root.addArrangedSubview(progress)
         startButton.target = self
@@ -107,6 +115,14 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         let active = controller.settings.wakePhrase
         let pending = !typed.isEmpty
             && typed.compare(active, options: .caseInsensitive) != .orderedSame
+        // A button that says Record must record. Finishing an enrollment, or
+        // resetting to the bundled phrase, repoints this button at "Done"; typing
+        // or picking a phrase afterwards has to point it back, or the window just
+        // closes when you ask it to record.
+        startButton.target = self
+        startButton.action = #selector(start)
+        acknowledgedRisk = false
+        didSucceed = false
         startButton.title = pending ? "Record “\(typed)” Three Times" : "Record It Three Times"
         progress.textColor = pending ? .controlAccentColor : .labelColor
         progress.stringValue = pending
@@ -125,11 +141,80 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
         phraseField.isEnabled = false
         startButton.isEnabled = false
         samples.removeAll()
+        checkFitness(of: phrase)
+    }
+
+    /// Try the phrase before asking anyone to say it three times, and say what
+    /// happened — but never refuse.
+    ///
+    /// The check speaks the phrase with `say` and tests the real keyword, which
+    /// catches phrases like "Hey Xena" that no amount of recording will fix. It is a
+    /// synthesized voice though, not this user's: it says "hey chatgpt" in a way the
+    /// model hears as "HEY CHAT GP", losing the final letter, so it condemns a
+    /// perfectly sayable phrase. Its verdict is therefore a warning, and the three
+    /// real recordings decide.
+    private func checkFitness(of phrase: String) {
+        guard let models = controller.modelsDirectory else {
+            beginRecording()
+            return
+        }
+        let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
+        progress.textColor = .secondaryLabelColor
+        progress.stringValue = "Checking that phrase…"
+
+        Task.detached { [weak self] in
+            let verdict = WakePhraseFitness.check(
+                tokens: KeywordTokenizer.tokenize(phrase, modelDir: kwsModel) ?? "",
+                spoken: SynthesizedSpeech.samples(of: phrase),
+                negatives: SynthesizedSpeech.falseAlarmClips(),
+                fires: { line, threshold, audio in
+                    Self.fires(line, threshold: threshold, audio: audio, modelDir: kwsModel)
+                })
+            await MainActor.run {
+                guard let self else { return }
+                switch verdict {
+                case .good:
+                    self.beginRecording()
+                case .cannotSpot:
+                    self.warn("A test run of “\(phrase)” did not register, so it may not work well. Your own voice is what counts, though — record it and see.")
+                case .tooCommon:
+                    self.warn("“\(phrase)” sounds close to ordinary conversation, so it might open Voice while you are talking to someone else. Record it anyway if you want to try.")
+                }
+            }
+        }
+    }
+
+    /// Warn once, then get out of the way: pressing the button again records.
+    private func warn(_ message: String) {
+        guard !acknowledgedRisk else { beginRecording(); return }
+        acknowledgedRisk = true
+        progress.textColor = .systemOrange
+        progress.stringValue = message
+        phraseField.isEnabled = true
+        startButton.isEnabled = true
+        startButton.title = "Record It Anyway"
+    }
+
+    private func beginRecording() {
         // The wake listener and the enrollment recorder cannot both own the
         // microphone. Stop listening for the duration and restore it after.
         resumeListening = controller.isListening
         controller.stopListening()
         recordNext()
+    }
+
+    /// One keyword line, one threshold, one clip. Shared by the fitness check and
+    /// calibration so both measure the phrase exactly the way the app will run it.
+    nonisolated private static func fires(_ line: String, threshold: Float,
+                              audio: [Float], modelDir: URL) -> Bool {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("heycodex-cal-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try? (line + "\n").write(to: file, atomically: true, encoding: .utf8)
+        guard let engine = try? WakeWordEngine(modelDir: modelDir, keywordsFile: file,
+                                              keywordsThreshold: threshold)
+        else { return false }
+        return engine.detects(in: audio)
     }
 
     private func recordNext() {
@@ -197,83 +282,115 @@ final class WakePhraseEnrollmentWindowController: NSWindowController, NSWindowDe
     private func finishEnrollment() {
         guard let models = controller.modelsDirectory else { return }
         let kwsModel = models.appendingPathComponent("sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
-        progress.stringValue = "Tuning the local keyword…"
-        let captured = samples
-        let score = controller.settings.wakeKeywordsScore
         let phrase = phraseField.stringValue
-        let fallbackLine = (try? String(contentsOf: models.appendingPathComponent("keywords.txt"), encoding: .utf8))?
-            .split(whereSeparator: \.isNewline).first.map(String.init)
+
+        // The keyword is the phrase's own spelling. Deriving it from what the model
+        // decoded out of a recording was measured and does not work: those lines
+        // fire on nothing, not even the takes they came from.
+        guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsModel) else {
+            progress.textColor = .systemOrange
+            progress.stringValue = "This model cannot spell that phrase. Try ordinary words, or a different phrase."
+            phraseField.isEnabled = true
+            startButton.isEnabled = true
+            restoreListening()
+            return
+        }
+
+        progress.textColor = .labelColor
+        progress.stringValue = "Tuning it to your voice…"
+        let captured = samples.map(\.audio)
+
         Task.detached { [weak self] in
-            let enrollment = WakeEnrollment(
-                decode: { KwsDebug.decodeTokens(modelDir: kwsModel, samples: $0).tokens },
-                fires: { lines, threshold, audio in
-                    let file = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("hey-codex-enrollment-\(UUID().uuidString).txt")
-                    defer { try? FileManager.default.removeItem(at: file) }
-                    try? (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
-                    guard let engine = try? WakeWordEngine(
-                        modelDir: kwsModel,
-                        keywordsFile: file,
-                        keywordsThreshold: threshold,
-                        keywordsScore: score)
-                    else { return false }
-                    return engine.detects(in: audio)
-                },
-                fallbackLine: fallbackLine)
-            let result = enrollment.enroll(samples: captured)
+            let calibration = WakeCalibration(fires: { line, threshold, audio in
+                Self.fires(line, threshold: threshold, audio: audio, modelDir: kwsModel)
+            })
+            let result = calibration.calibrate(tokens: tokens, samples: captured)
+            // A bare "0 of 3 fired" cannot say whether the takes or the phrase were
+            // the problem, so record what fired at each threshold.
+            let grid = result.isUsable ? "" : EnrollmentDiagnostics.grid(
+                lines: [tokens],
+                thresholds: KeywordTuning.calibrationThresholds,
+                samples: captured,
+                fires: { line, threshold, audio in
+                    calibration.fires(WakeCalibration.keywordLine(tokens: line, threshold: threshold),
+                                      threshold, audio)
+                })
+            EnrollmentDiagnostics.saveAudioIfEnabled(captured)
+            EnrollmentDiagnostics.record(phrase: phrase,
+                                         tokens: tokens,
+                                         sampleCounts: captured.map(\.count),
+                                         grid: grid,
+                                         result: result)
             await MainActor.run {
                 guard let self else { return }
-                guard result.allFired else {
-                    self.progress.stringValue = "Those three did not come out consistent enough to trust. Give it another go, a little slower."
+                guard result.isUsable else {
+                    self.progress.textColor = .systemOrange
+                    self.progress.stringValue = result.firedCount == 0
+                        ? "None of the three recordings triggered the phrase.\nCheck the right microphone is selected, then try again."
+                        : "Only \(result.firedCount) of 3 recordings triggered it.\nTry again, saying it the same way each time."
                     self.phraseField.isEnabled = true
                     self.startButton.isEnabled = true
+                    self.restoreListening()
                     return
                 }
                 do {
                     try self.controller.completeEnrollment(phrase: phrase,
-                                                          keywordLines: result.keywordLines,
+                                                          keywordLines: [result.keywordLine],
                                                           threshold: result.threshold)
-                    // The sweep takes the highest threshold that fires all three
-                    // samples, so landing on the loosest rung means this phrase
-                    // was hard to match - which is also when false wakes climb.
-                    let barelyMatched = result.threshold <= 0.10
-                    var body = "Hey Codex is already listening for it. Try it out, and change it whenever you like from the menu bar."
-                    if barelyMatched {
-                        body += "\n\nThis phrase needed maximum sensitivity to detect reliably, "
-                            + "so it may occasionally wake by accident. A longer or more distinctive "
-                            + "phrase usually matches more cleanly."
-                    }
-                    self.confirm(title: "“\(phrase)” is your wake phrase now 🎉", body: body)
-                    self.complete()
+                    self.showSuccess(phrase: phrase, result: result)
                 } catch {
+                    self.progress.textColor = .systemOrange
                     self.progress.stringValue = error.localizedDescription
                     self.phraseField.isEnabled = true
                     self.startButton.isEnabled = true
+                    self.restoreListening()
                 }
             }
         }
     }
 
+    /// Confirmation belongs in this window. An NSAlert here was the only modal in
+    /// the whole app, and it read as something having gone wrong.
+    private func showSuccess(phrase: String, result: WakeCalibration.Result) {
+        didSucceed = true
+        titleLabel.stringValue = "“\(phrase)” is your wake phrase 🎉"
+        var lines = ["Try it now: say “\(phrase)” and ChatGPT Voice should open."]
+        if !result.allFired {
+            lines.append("Two of your three takes matched, which is enough. Re-record if it feels unreliable.")
+        }
+        if result.isMarginal {
+            lines.append("It needed high sensitivity, so it may occasionally trigger by accident. A longer or more distinctive phrase usually matches more cleanly.")
+        }
+        detail.stringValue = lines.joined(separator: "\n\n")
+        progress.textColor = .systemGreen
+        progress.stringValue = "Saved and listening."
+        phraseField.isEnabled = false
+        startButton.title = "Done"
+        startButton.isEnabled = true
+        startButton.target = self
+        startButton.action = #selector(closeAfterSuccess)
+        presetPicker?.isEnabled = false
+        restoreListening()
+    }
+
+    @objc private func closeAfterSuccess() { complete() }
+
     @objc private func resetToDefault() {
         do {
             try controller.resetWakePhraseToDefault()
             phraseField.stringValue = "Hey Codex"
-            confirm(title: "Go Back to “Hey Codex”",
-                    body: "Your recorded phrase is gone and the built in “Hey Codex” is listening again.")
-            complete()
+            titleLabel.stringValue = "Back to “Hey Codex”"
+            detail.stringValue = "Your recorded phrase is gone and the built-in “Hey Codex” is listening again."
+            progress.textColor = .systemGreen
+            progress.stringValue = "Saved."
+            didSucceed = true
+            startButton.title = "Done"
+            startButton.target = self
+            startButton.action = #selector(closeAfterSuccess)
+            startButton.isEnabled = true
         } catch {
             progress.stringValue = error.localizedDescription
         }
-    }
-
-    /// Enrollment ends by closing the window, so a status label would only
-    /// flash past. Say plainly what happened, in something the user dismisses.
-    private func confirm(title: String, body: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = body
-        alert.addButton(withTitle: "Done")
-        alert.runModal()
     }
 
     private func complete() {

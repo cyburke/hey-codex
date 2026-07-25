@@ -22,9 +22,21 @@ let package = Package(
             name: "CSherpaOnnx",
             path: "Sources/CSherpaOnnx/sherpa-onnx.xcframework"
         ),
+        // Bridges the BPE encoder inside the sherpa-onnx static library, which is
+        // how keyword text becomes model tokens. Header-only here: the
+        // implementation is already linked.
+        .target(
+            name: "CBpe",
+            path: "Sources/CBpe",
+            publicHeadersPath: "include",
+            // The vendored encoder headers include each other by their upstream
+            // path, and they must stay out of the public header directory or Swift
+            // tries to import C++ into the module.
+            cxxSettings: [.unsafeFlags(["-std=c++17", "-I", "Sources/CBpe"])]
+        ),
         .target(
             name: "HeyCodexKit",
-            dependencies: ["CSherpaOnnx"],
+            dependencies: ["CSherpaOnnx", "CBpe"],
             path: "Sources/HeyCodexKit",
             linkerSettings: [
                 // The static archive bundles onnxruntime + C++ code but not the
@@ -71,6 +83,7 @@ let package = Package(
                 "AudioInputSelectionTests.swift",
                 "SetupStateTests.swift",
                 "UpdateCheckTests.swift",
+                "WakeCalibrationTests.swift",
                 "VoiceShortcutTests.swift",
                 "WakeEnrollmentTests.swift",
                 "WakePhraseTests.swift",

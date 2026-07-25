@@ -32,7 +32,13 @@ public enum KwsDebug {
             featConfig: feat, modelConfig: model, decodingMethod: "greedy_search")
         let rec = SherpaOnnxRecognizer(config: &cfg)
         rec.acceptWaveform(samples: samples)
-        rec.acceptWaveform(samples: [Float](repeating: 0, count: 4800))
+        // Same tail flush as WakeWordEngine.detects: this streaming zipformer needs
+        // a full second of pad plus inputFinished to emit its last chunk. With 0.3s
+        // and no inputFinished, every decode lost its final token — "hey jarvis"
+        // came back as "HEY JARVI" — which reads as a mispronunciation rather than
+        // a truncation and sent one diagnosis down the wrong path entirely.
+        rec.acceptWaveform(samples: [Float](repeating: 0, count: 16000))
+        rec.inputFinished()
         while rec.isReady() { rec.decode() }
         let r = rec.getResult()
         return (r.text, r.tokens)

@@ -12,9 +12,21 @@ import Foundation  // For NSString
 ///   - s: The String to convert.
 /// - Returns: A pointer that can be passed to C as `const char*`
 
+/// Returns a C string that stays alive for as long as the C library needs it.
+///
+/// The vendored version of this used `(s as NSString).utf8String`, whose pointer
+/// belongs to a temporary NSString and is dangling by the end of the statement.
+/// Config structs built with it are read by C later, so every field was undefined
+/// behaviour that happened to work. It did not always: `modeling_unit` and
+/// `bpe_vocab` arrived as the C defaults, silently disabling BPE tokenisation and
+/// making plain-text keywords impossible.
+///
+/// `strdup` gives stable storage. These strings are a handful of short paths
+/// created once per engine, so not freeing them is a bounded, deliberate trade
+/// against a class of memory bug that fails invisibly.
 func toCPointer(_ s: String) -> UnsafePointer<Int8>! {
-  let cs = (s as NSString).utf8String
-  return UnsafePointer<Int8>(cs)
+  guard let duplicated = strdup(s) else { return nil }
+  return UnsafePointer<Int8>(duplicated)
 }
 
 /// Return an instance of SherpaOnnxOnlineTransducerModelConfig.

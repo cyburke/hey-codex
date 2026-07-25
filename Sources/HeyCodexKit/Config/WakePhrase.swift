@@ -2,7 +2,10 @@ import Foundation
 
 /// The spoken phrase enrolled into the local keyword spotter.
 public enum WakePhrase: Equatable, Sendable {
-    public static let presets = ["Hey Codex", "Hey ChatGPT", "Hey Jarvis"]
+    /// Suggestions only, for the field that accepts any short phrase. Kept to three
+    /// that measure cleanly (`swift run hey-codex-selftest phrase-fitness`) rather
+    /// than a list of invented assistant names.
+    public static let presets = ["Hey Codex", "Hey Jarvis", "Hey Computer"]
 
     /// Normalizes the phrase accepted by the settings UI. A short, multiword
     /// phrase has substantially lower accidental-trigger risk than a single word.
