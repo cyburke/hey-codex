@@ -53,6 +53,12 @@ real defects in each.
 
 ### Changed
 
+- **Homebrew is the install path.** The cask clears the quarantine flag, so the
+  app opens with no security prompt. Downloading the zip by hand still works but
+  is no longer documented as a route, since macOS blocks it until the user
+  approves the app in System Settings and there is nothing an unnotarized build
+  can do about that. Building from source is offered instead, for anyone who
+  would rather read the code first.
 - **No more close phrase.** Voice ends in ChatGPT's own panel and Hey Codex
   notices and re-arms. This deleted the second wake engine, the close keyword
   model, and the launch-versus-close arbitration entirely.

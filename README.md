@@ -6,10 +6,10 @@
 
 **Say "Hey Codex." ChatGPT Voice opens. Keep your hands where they are.**
 
-[![Download](https://img.shields.io/github/v/release/cyburke/hey-codex?label=download&style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
+[![Release](https://img.shields.io/github/v/release/cyburke/hey-codex?label=release&style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
 [![macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-black?style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
-[![Size](https://img.shields.io/badge/download-18%20MB-green?style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
+[![Size](https://img.shields.io/badge/app-30%20MB-green?style=flat-square)](https://github.com/cyburke/hey-codex/releases/latest)
 
 </div>
 
@@ -23,29 +23,13 @@ Nothing is recorded. Nothing is uploaded. No account, no signup, no config file.
 
 ## Install
 
-**Homebrew, recommended**
-
 ```bash
 brew install --cask cyburke/tap/hey-codex
 ```
 
-That is the whole install. Open it from Applications and it launches straight away.
+That is the whole thing. Open it from Applications and it launches straight away, with no security warning to click through.
 
-**Or download it**
-
-1. Grab the `.zip` from the [latest release](https://github.com/cyburke/hey-codex/releases/latest). It is 18 MB.
-2. Unzip and drag **HeyCodex.app** into Applications.
-3. Run this once, which takes about two seconds:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/HeyCodex.app
-```
-
-4. Open it.
-
-If you would rather not touch a terminal, skip step 3, open the app, click **Done** on the warning, then go to **System Settings → Privacy & Security**, scroll to Security, and click **Open Anyway**. Same result.
-
-Both routes exist because Hey Codex is not notarized by Apple. [Here is why that is, and what it does and does not mean.](#why-macos-warns-you)
+No Homebrew? [Install it first](https://brew.sh), or [build Hey Codex from source](#build-it-yourself) if you would rather read the code before running it.
 
 ## Set it up
 
@@ -114,7 +98,7 @@ Hey Codex is not notarized. Notarization requires a paid Apple Developer account
 
 Gatekeeper reads "not notarized" as "unknown," so macOS quarantines the download. That is a statement about Apple's paperwork, not about the app. Every line of source is in this repo, and you can build it yourself in about a minute if you would rather not take my word for it.
 
-The Homebrew cask clears that quarantine flag for you during install, which is why it launches without a prompt. If you would rather macOS keep its guard up and approve the app yourself, install from the zip and use the System Settings route instead.
+The Homebrew cask clears that quarantine flag during install, which is why the app opens without a prompt. If you would rather macOS kept its guard up, build from source instead: a binary you compiled yourself is never quarantined, because it was never downloaded.
 
 If you hold an Apple Developer ID and want to contribute a notarized build, please open an issue. That would be a genuinely useful contribution.
 
@@ -129,7 +113,7 @@ Hey Codex listens for one phrase and does one thing. It never inserts text, neve
 ## Known limits
 
 - Updates are not automatic. Hey Codex tells you when a release exists, you install it.
-- The app is signed but not notarized. Homebrew handles that for you. A downloaded zip needs the one line above, or a trip through System Settings.
+- The app is signed but not notarized. Homebrew handles that for you. A zip downloaded straight from the releases page will be blocked by macOS until you approve it in System Settings, which is why Homebrew is the recommended route.
 - Upgrading can re-prompt for Microphone and Accessibility, because a rebuilt app can look like a new app to macOS.
 - It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
 
@@ -157,7 +141,7 @@ An app that listens for a wake word has no business activating your speakers. `s
 
 ## Build it yourself
 
-Needs macOS 14.4 or later and Swift 6.
+Reasonable thing to want with an app that listens to your microphone. Needs macOS 14.4 or later and Swift 6.
 
 ```bash
 git clone https://github.com/cyburke/hey-codex.git
