@@ -17,6 +17,8 @@ ChatGPT's desktop app opens Voice mode with a keyboard shortcut. Hey Codex sits 
 
 Nothing you say is recorded. Nothing leaves your Mac. No account, no signup.
 
+ChatGPT's desktop app has to be installed, but it does not have to be running or in front. If it is closed, Hey Codex opens it in the background for you. Not having to go find the window is the point.
+
 ## Install
 
 ```bash
