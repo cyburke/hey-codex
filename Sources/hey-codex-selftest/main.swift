@@ -540,67 +540,315 @@ func probePhraseFitness() -> Bool {
     }
 }
 
+/// Measures `KeywordTuning.score` and `KeywordTuning.numTrailingBlanks` on real
+/// audio, in both directions, and prints a grid so the numbers this file sets
+/// have a reproducible source instead of being guessed (AUDIT-2026-07-24.md,
+/// "Open questions" item 3). Regenerate with:
+///
+///   swift run hey-codex-selftest tuning
+///
+/// See TUNING-2026-07-25.md for the committed grid this produced, the exact
+/// corpus, and the winning cell.
+///
+/// Grid axes: score in {1.0, 1.25, 1.5, 1.75, 2.0} x numTrailingBlanks in
+/// {1, 2, 3}, at the shipped threshold 0.25 (not swept - P0.2 already pins it
+/// to the default install, and sweeping three axes at once stops being a
+/// readable grid).
+///
+/// Every clip - synthetic and real - is put through the same
+/// `AudioSamples.normalized(targetRMS: 0.047, peakCeiling: 0.5)` gain
+/// normalization the shipping app now applies before enrollment fitness
+/// checks, so this measures runtime behaviour rather than raw `say` output
+/// levels.
 func probeTuning() -> Bool {
     run("keyword.tuningGrid") { c in
-        func spoken(_ phrase: String) throws -> [Float] {
-            let aiff = FileManager.default.temporaryDirectory
-                .appendingPathComponent("t-\(UUID().uuidString).aiff")
-            let wav = aiff.deletingPathExtension().appendingPathExtension("wav")
+        let targetRMS: Float = 0.047
+        let peakCeiling: Float = 0.5
+
+        // Multiple voices deliberately: the two prior GUESSED values in this
+        // file were partly a single-voice mistake (AUDIT-2026-07-24.md
+        // "Deliberately NOT doing" section, re: the zena/xena re-test). Alex
+        // is not installed on every macOS version, so Fred substitutes for it
+        // here - both are US English `say` voices distinct from Samantha.
+        let voices = ["Samantha", "Alex", "Daniel", "Karen", "Fred"]
+        let availableVoices = voices.filter { voice in
+            // `say -o` infers the output format from the extension and refuses
+            // /dev/null (exit -241), so probe with a real scratch file.
+            let probe = FileManager.default.temporaryDirectory
+                .appendingPathComponent("voice-probe-\(UUID().uuidString).aiff")
+            defer { try? FileManager.default.removeItem(at: probe) }
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+            p.arguments = ["-v", voice, "-o", probe.path, "."]
+            p.standardError = FileHandle.nullDevice
+            guard (try? p.run()) != nil else { return false }
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        }
+        if availableVoices.count < voices.count {
+            print("  [diag] voices unavailable on this Mac, skipped: "
+                  + Set(voices).subtracting(availableVoices).sorted().joined(separator: ", "))
+        }
+
+        func synthesize(_ phrase: String, voice: String) -> [Float]? {
+            let base = FileManager.default.temporaryDirectory
+                .appendingPathComponent("tune-\(UUID().uuidString)")
+            let aiff = base.appendingPathExtension("aiff")
+            let wav = base.appendingPathExtension("wav")
             defer {
                 try? FileManager.default.removeItem(at: aiff)
                 try? FileManager.default.removeItem(at: wav)
             }
             let say = Process()
             say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-            say.arguments = ["-v", "Samantha", "-o", aiff.path, phrase]
-            try say.run(); say.waitUntilExit()
+            say.arguments = ["-v", voice, "-o", aiff.path, phrase]
+            guard (try? say.run()) != nil else { return nil }
+            say.waitUntilExit()
+            guard say.terminationStatus == 0 else { return nil }
             let cv = Process()
             cv.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
             cv.arguments = ["-f", "WAVE", "-d", "LEI16@16000", "-c", "1", aiff.path, wav.path]
-            try cv.run(); cv.waitUntilExit()
-            return try AudioSamples.load(wav)
+            guard (try? cv.run()) != nil else { return nil }
+            cv.waitUntilExit()
+            return try? AudioSamples.load(wav)
         }
-        guard let tokens = KeywordTokenizer.tokenize("hey codex", modelDir: kwsDir) else {
-            c.fail("tokenisation failed"); return
+
+        struct Clip { let label: String; let audio: [Float]; let preNormRMS: Float }
+        func clip(_ label: String, _ raw: [Float]) -> Clip {
+            Clip(label: label,
+                 audio: AudioSamples.normalized(raw, targetRMS: targetRMS, peakCeiling: peakCeiling),
+                 preNormRMS: AudioSamples.rms(raw))
         }
-        let positive = try spoken("hey codex")
-        let negatives = [
-            try spoken("the weather today is sunny and warm"),
-            try spoken("I can help you with that"),
-            try spoken("hey there how are you doing"),
-            try spoken("let me check the codebase for you"),
+
+        // MARK: keywords under test
+        //
+        // Production arms exactly one keyword at a time (AppController.swift
+        // builds `keywordsFile` from either the bundled default or the one
+        // phrase the user enrolled - never several at once). The first version
+        // of this grid armed all candidate phrases plus the model's reference
+        // keywords together in one engine, and every cell "false-alarmed" on
+        // the same clip - which turned out to be the model's own reference
+        // keyword FOR EVER firing on "hey there how are you", not anything a
+        // real install would ever have armed alongside it. Arming one keyword
+        // per engine, matching production, removes that cross-keyword
+        // contamination.
+
+        // The default phrase plus several plausible custom ones a real user
+        // might enroll. Each gets its own single-keyword engine per cell,
+        // tokenized the same way enrollment does.
+        let candidatePhrases = ["hey codex", "hey jarvis", "hey computer", "ok codex",
+                                 "wake up codex", "hey samantha"]
+        var phraseTokens: [String: String] = [:]
+        for phrase in candidatePhrases {
+            guard let tokens = KeywordTokenizer.tokenize(phrase, modelDir: kwsDir) else {
+                print("  [diag] \(phrase) does not tokenize, dropped from the grid"); continue
+            }
+            phraseTokens[phrase] = tokens
+        }
+        // The model's own validated keywords (see test_wavs/keywords.txt /
+        // trans.txt) - a positive-only sanity control, tested alone, that the
+        // tuning grid does not regress detection the model authors themselves
+        // shipped as ground truth. Not part of the false-alarm count: no real
+        // install ever arms these.
+        let referenceClips: [(label: String, tokens: String, wav: String)] = [
+            ("test_wavs/0.wav (LIGHT UP)", "▁ L IGHT ▁UP", "test_wavs/0.wav"),
+            ("test_wavs/1.wav (LOVELY CHILD)", "▁LOVE LY ▁CHI L D", "test_wavs/1.wav"),
+            ("test_wavs/1.wav (FOR EVER)", "▁FOR E VER", "test_wavs/1.wav"),
         ]
 
-        func detects(_ audio: [Float], score: Float, threshold: Float, blanks: Int) -> Bool {
+        // MARK: positive corpus (per phrase)
+
+        var positivesByPhrase: [String: [Clip]] = [:]
+        for phrase in candidatePhrases where phraseTokens[phrase] != nil {
+            var clips: [Clip] = []
+            for voice in availableVoices {
+                guard let raw = synthesize(phrase, voice: voice) else { continue }
+                clips.append(clip("\"\(phrase)\" (\(voice))", raw))
+            }
+            positivesByPhrase[phrase] = clips
+        }
+        let totalPositives = positivesByPhrase.values.reduce(0) { $0 + $1.count }
+        c.assert(totalPositives > 0, "no positive clips were built - say/afconvert may be broken")
+
+        var referencePositives: [(label: String, tokens: String, clip: Clip)] = []
+        for r in referenceClips {
+            guard let raw = try? AudioSamples.load(kwsDir.appendingPathComponent(r.wav)) else { continue }
+            referencePositives.append((r.label, r.tokens, clip(r.label, raw)))
+        }
+
+        // MARK: negative corpus (shared across every candidate-phrase engine)
+
+        let falseAlarmSentences = [
+            "hey there how are you", "I put it in a bag", "let me check the code for you",
+            "the weather today is warm", "can you help me with this later",
+            "I think we should go home now", "that sounds like a great idea",
+            "please turn off the lights before you leave",
+        ]
+        var negatives: [Clip] = []
+        for sentence in falseAlarmSentences {
+            for voice in availableVoices {
+                guard let raw = synthesize(sentence, voice: voice) else { continue }
+                negatives.append(clip("\"\(sentence)\" (\(voice))", raw))
+            }
+        }
+        // Real human recordings - three takes of "Hey Xena" (a phrase this
+        // model cannot spot at all; see AUDIT-2026-07-24.md "Deliberately NOT
+        // doing") captured on a distant monitor mic at RMS 0.005-0.009, 5-9x
+        // below the KWS model's own reference level of 0.047. They are not
+        // usable as positive evidence for any keyword in this grid - they say
+        // the wrong words - so they are folded in here as the hardest
+        // available negative: real, quiet, off-keyword human speech. If
+        // anything in the corpus is going to false-alarm from noise-floor
+        // artifacts introduced by aggressive gain normalization, it is these.
+        let takesDir = EnrollmentDiagnostics.audioDirectory
+        var realTakesUsed = 0
+        for n in 1...3 {
+            let takeURL = takesDir.appendingPathComponent("take-\(n).wav")
+            if let raw = try? AudioSamples.load(takeURL) {
+                negatives.append(clip("take-\(n).wav (real \"hey xena\", quiet mic, stress-only)", raw))
+                realTakesUsed += 1
+            }
+        }
+        if realTakesUsed == 0 {
+            print("  [diag] no saved enrollment takes found at \(takesDir.path) - real-mic stress negative skipped")
+        }
+
+        // MARK: report where the peak ceiling capped normalization short of target
+
+        let allPositiveClips = positivesByPhrase.values.flatMap { $0 } + referencePositives.map(\.clip)
+        let short = (allPositiveClips + negatives).filter { AudioSamples.rms($0.audio) < targetRMS * 0.98 }
+        if short.isEmpty {
+            print("  [diag] every clip reached target RMS \(targetRMS) after normalization")
+        } else {
+            print("  [diag] peak ceiling (\(peakCeiling)) kept these below target RMS \(targetRMS):")
+            for s in short {
+                print("    \(s.label.padding(toLength: 55, withPad: " ", startingAt: 0)) "
+                      + String(format: "preRMS=%.4f  postRMS=%.4f", s.preNormRMS, AudioSamples.rms(s.audio)))
+            }
+        }
+        print("  [diag] positives=\(totalPositives) across \(positivesByPhrase.count) candidate phrases, "
+              + "+\(referencePositives.count) reference-keyword sanity clips (not scored as false-alarm surface)")
+        print("  [diag] negatives=\(negatives.count) (incl. \(realTakesUsed) real-mic stress take(s)), "
+              + "tested against every candidate phrase's own engine")
+        print("  [diag] voices used: \(availableVoices.joined(separator: ", "))")
+
+        // MARK: sweep
+
+        // One keyword armed per engine, matching production - see note above.
+        func singleKeywordEngine(tokens: String, score: Float, blanks: Int) -> WakeWordEngine? {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("kw-\(UUID().uuidString).txt")
             defer { try? FileManager.default.removeItem(at: file) }
             try? (WakeCalibration.keywordLine(tokens: tokens, score: score) + "\n")
                 .write(to: file, atomically: true, encoding: .utf8)
-            guard let e = try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
-                                             keywordsThreshold: threshold,
-                                             keywordsScore: score,
-                                             numTrailingBlanks: blanks) else { return false }
-            return e.detects(in: audio)
+            return try? WakeWordEngine(modelDir: kwsDir, keywordsFile: file,
+                                       keywordsThreshold: KeywordTuning.threshold,
+                                       keywordsScore: score, numTrailingBlanks: blanks)
         }
 
-        print("  score thresh blanks | wake? falseAlarms")
-        var recommended: (Float, Float, Int)?
-        for score in [Float(1.0), 1.5, 2.0] {
-            for threshold in [Float(0.25), 0.20, 0.15] {
-                for blanks in [1, 2] {
-                    let woke = detects(positive, score: score, threshold: threshold, blanks: blanks)
-                    let false_ = negatives.filter { detects($0, score: score, threshold: threshold, blanks: blanks) }.count
-                    print(String(format: "  %.1f   %.2f   %d      | %@   %d",
-                                 score, threshold, blanks, woke ? "yes" : "NO ", false_))
-                    if woke, false_ == 0, recommended == nil { recommended = (score, threshold, blanks) }
+        // `detects(in:)` pads every clip with a full second of trailing
+        // silence to reliably flush the chunk-16 zipformer's last chunk (see
+        // WakeWordEngine.detects(in:)). That is the right model for a
+        // positive: the app's capture window keeps recording past the wake
+        // word until VAD sees a pause, so there is always ample trailing
+        // silence by the time detection runs - which is also why the first
+        // run of this grid showed numTrailingBlanks having zero effect on
+        // positives at 1/2/3: with a full second of runway, all three are
+        // trivially satisfied regardless of the setting.
+        //
+        // numTrailingBlanks' actual job - per its doc comment, suppressing a
+        // false trigger on a fragment buried mid-sentence - can only show up
+        // against continuous speech that keeps going, with no artificial
+        // pause inserted. So false alarms are measured by streaming the
+        // negative clip's own audio frame-by-frame (~100ms/frame, matching
+        // the live mic loop) with nothing appended, and checking whether the
+        // spotter fires at any point before the sentence ends.
+        func firesStreaming(_ e: WakeWordEngine, _ audio: [Float]) -> (Bool, String?) {
+            defer { e.reset() }
+            let frame = 1600
+            var i = 0
+            while i < audio.count {
+                let chunk = Array(audio[i..<min(i + frame, audio.count)])
+                if e.feed(chunk) { return (true, e.lastFiredKeyword) }
+                i += frame
+            }
+            return (false, nil)
+        }
+
+        let diag = ProcessInfo.processInfo.environment["HEYCODEX_TUNING_DIAG"] == "1"
+        let totalNegativeChecks = negatives.count * positivesByPhrase.count
+        let scores: [Float] = [1.0, 1.25, 1.5, 1.75, 2.0]
+        let blanksValues = [1, 2, 3]
+        print("\n  score blanks | positives              falseAlarms (per-phrase engine x negative corpus)")
+        var best: (score: Float, blanks: Int, positives: Int, falseAlarms: Int)?
+        var referenceRegressed = false
+        for score in scores {
+            for blanks in blanksValues {
+                var posHits = 0
+                var falseHits = 0
+                for (phrase, clips) in positivesByPhrase {
+                    guard let tokens = phraseTokens[phrase],
+                          let e = singleKeywordEngine(tokens: tokens, score: score, blanks: blanks) else {
+                        print("  \(phrase): ENGINE CONSTRUCTION FAILED"); continue
+                    }
+                    posHits += clips.filter { e.detects(in: $0.audio) }.count
+                    for n in negatives {
+                        let (fired, keyword) = firesStreaming(e, n.audio)
+                        if fired {
+                            falseHits += 1
+                            if diag { print("    [diag] false alarm: \(n.label) armed=\"\(phrase)\" fired=[\(keyword ?? "?")]") }
+                        }
+                    }
+                }
+                // Reference-keyword regression check: positive-only, not part
+                // of the false-alarm count (see note above).
+                var refHits = 0
+                for r in referencePositives {
+                    if let e = singleKeywordEngine(tokens: r.tokens, score: score, blanks: blanks),
+                       e.detects(in: r.clip.audio) {
+                        refHits += 1
+                    }
+                }
+                if refHits < referencePositives.count { referenceRegressed = true }
+                print(String(format: "  %.2f  %d      | %3d/%-3d (%5.1f%%)  ref %d/%-3d  %3d/%-3d",
+                             score, blanks, posHits, totalPositives,
+                             100.0 * Double(posHits) / Double(max(totalPositives, 1)),
+                             refHits, referencePositives.count,
+                             falseHits, totalNegativeChecks))
+                if falseHits == 0, best == nil || posHits > best!.positives {
+                    best = (score, blanks, posHits, falseHits)
                 }
             }
         }
-        if let r = recommended {
-            print(String(format: "  [diag] strictest setting that wakes with zero false alarms: score=%.1f threshold=%.2f blanks=%d", r.0, r.1, r.2))
+        if referenceRegressed {
+            print("  [diag] at least one cell missed a model-authors' reference keyword - see per-cell ref column")
         }
-        c.assert(recommended != nil, "no combination woke on the phrase without false alarms")
+
+        // Per-phrase breakdown at the winning cell, so a reader can see which
+        // phrases/voices missed rather than only the aggregate count.
+        if let b = best {
+            print("\n  [diag] per-phrase detection at the winning cell (score=\(b.score), blanks=\(b.blanks)):")
+            for (phrase, clips) in positivesByPhrase.sorted(by: { $0.key < $1.key }) {
+                guard let tokens = phraseTokens[phrase],
+                      let e = singleKeywordEngine(tokens: tokens, score: b.score, blanks: b.blanks) else { continue }
+                let hits = clips.filter { e.detects(in: $0.audio) }
+                let hitLabels = Set(hits.map(\.label))
+                let missed = clips.filter { !hitLabels.contains($0.label) }
+                print("    \(phrase.padding(toLength: 16, withPad: " ", startingAt: 0)) \(hits.count)/\(clips.count)"
+                      + (missed.isEmpty ? "" : "   missed: " + missed.map { $0.label }.joined(separator: ", ")))
+            }
+        }
+
+        if let b = best {
+            print(String(format: "\n  [winner] score=%.2f numTrailingBlanks=%d - "
+                         + "%d/%d positives, 0/%d false alarms. Maximizes positive "
+                         + "detection at zero false alarms; lowest score then lowest "
+                         + "blanks among ties.",
+                         b.score, b.blanks, b.positives, totalPositives, totalNegativeChecks))
+        } else {
+            print("\n  [winner] none - every cell produced at least one false alarm")
+        }
+        c.assert(best != nil, "no (score, numTrailingBlanks) combination reached zero false alarms")
     }
 }
 

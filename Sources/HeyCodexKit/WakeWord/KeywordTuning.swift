@@ -16,19 +16,26 @@ public enum KeywordTuning {
     public static let threshold: Float = 0.25
 
     /// Bonus keeping keyword paths alive through the beam search. The library
-    /// default is 1.0. Values above roughly 2 start surfacing keywords on weak
-    /// acoustic evidence, which reads to a user as random triggering.
-    public static let score: Float = 1.5
+    /// default is 1.0. `score` and `numTrailingBlanks` were both GUESSED
+    /// (1.5, 2) until measured against a 5-voice synthetic corpus plus real
+    /// audio in `TUNING-2026-07-25.md` - regenerate with
+    /// `swift run hey-codex-selftest tuning`. That grid swept score in
+    /// {1.0, 1.25, 1.5, 1.75, 2.0} x numTrailingBlanks in {1, 2, 3} at this
+    /// threshold and found 1.25/1 wakes on more of the corpus than the old
+    /// 1.5/2 guess, at zero measured false alarms either way - so the guess
+    /// had over-corrected the boost, not under-corrected it.
+    public static let score: Float = 1.25
 
     /// Beam width. Library default.
     public static let maxActivePaths = 4
 
     /// Blank frames required after the keyword before it is finalised. The
-    /// library default of 1 finalises almost immediately, which fires on
-    /// keywords embedded mid-sentence. A wake word is nearly always said on its
-    /// own, so waiting for a short pause is the cheapest false-trigger defence
-    /// available.
-    public static let numTrailingBlanks = 2
+    /// library default is 1. Higher waits for a pause after the keyword before
+    /// firing, which suppresses a keyword fragment matched mid-sentence at the
+    /// cost of latency. Measured in `TUNING-2026-07-25.md`: 1 reached the
+    /// same zero-false-alarm result as the previously-guessed 2, with less
+    /// latency, so there was no measured benefit to waiting longer.
+    public static let numTrailingBlanks = 1
 
     /// Thresholds tried during enrollment, strictest first. Stops at 0.08 to
     /// stay inside the range the sensitivity control allows.

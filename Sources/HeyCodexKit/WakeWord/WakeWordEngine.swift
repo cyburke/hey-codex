@@ -20,6 +20,12 @@ public final class WakeWordEngine {
 
     private let spotter: SherpaOnnxKeywordSpotterWrapper
 
+    /// The keyword text `getResult()` reported on the most recent fire, before
+    /// `reset()` clears it. Diagnostic only - lets a multi-keyword sweep (see
+    /// `probeTuning`) report which armed phrase actually fired on a false
+    /// alarm, instead of just that one of several did.
+    public private(set) var lastFiredKeyword: String?
+
     /// - Parameters:
     ///   - modelDir: directory of the KWS zipformer model (encoder/decoder/joiner + tokens.txt).
     ///   - keywordsFile: tokenized keywords file containing the "hey codex" entry.
@@ -28,7 +34,8 @@ public final class WakeWordEngine {
     ///     during the modified beam search — it keeps the keyword path alive in
     ///     the beam when acoustic evidence is weak. This is the primary lever for
     ///     spotting a hard wake word on a small model; see `KeywordTuning.score`
-    ///     for the calibrated value and why it is 1.5, not the library's 1.0.
+    ///     for the calibrated value and why it is 1.25, not the library's 1.0
+    ///     (TUNING-2026-07-25.md has the measurement).
     ///   - maxActivePaths: beam width for the keyword spotter's modified search.
     ///   - numTrailingBlanks: blank frames required after the keyword before it
     ///     is finalised. Higher makes it wait for a pause, which cuts false
@@ -97,12 +104,14 @@ public final class WakeWordEngine {
         // Tail pad so the streaming zipformer (chunk-16) flushes its final
         // partial chunk. Short wake clips (~0.7s) emit too few frames otherwise:
         // 0.2s of pad gave only ~2 decode steps and never tripped the keyword;
-        // 1s reliably flushes the last tokens. See docs tuning log.
+        // 1s reliably flushes the last tokens.
         spotter.acceptWaveform(samples: [Float](repeating: 0, count: 16000), sampleRate: 16000)
         spotter.inputFinished()
         while spotter.isReady() {
             spotter.decode()
-            if !spotter.getResult().keyword.isEmpty {
+            let result = spotter.getResult()
+            if !result.keyword.isEmpty {
+                lastFiredKeyword = result.keyword
                 spotter.reset()
                 return true
             }
@@ -123,7 +132,9 @@ public final class WakeWordEngine {
         spotter.acceptWaveform(samples: samples, sampleRate: 16000)
         while spotter.isReady() {
             spotter.decode()
-            if !spotter.getResult().keyword.isEmpty {
+            let result = spotter.getResult()
+            if !result.keyword.isEmpty {
+                lastFiredKeyword = result.keyword
                 spotter.reset()
                 return true
             }
