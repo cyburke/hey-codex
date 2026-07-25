@@ -59,7 +59,6 @@ There is one network request in the whole app: once a day it asks GitHub whether
 - Updates are not automatic. Hey Codex tells you when a release exists and you install it.
 - Upgrading can re-prompt for Microphone and Accessibility.
 - It is a wake-word tool, so it will occasionally miss you or trip on something that sounds close. Sensitivity is adjustable.
-- macOS Voice Control does this too, built in and free, as an always-on system-wide listener.
 
 ## Build it yourself
 
