@@ -57,6 +57,7 @@ let package = Package(
             sources: [
                 "AppController.swift",
                 "HeyCodexApp.swift",
+                "LoginItem.swift",
                 "SettingsWindowController.swift",
                 "SetupWindowController.swift",
                 "WakePhraseEnrollmentWindowController.swift",

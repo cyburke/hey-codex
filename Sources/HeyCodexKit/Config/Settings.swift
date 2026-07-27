@@ -22,6 +22,10 @@ public struct Settings: Codable, Equatable, Sendable {
     /// True only after the user has explicitly granted permission for Hey Codex
     /// to post the configured Voice shortcut. This drives the focused first-run
     /// setup window; it is separate from wake-phrase enrollment.
+    /// Whether the app has already made its one-time attempt to start at login.
+    /// Without this it would either miss everyone who finished setup before the
+    /// feature existed, or re-enable itself every launch against the user's wish.
+    public var loginItemConfigured: Bool
     public var voiceShortcutSetupCompleted: Bool
     /// True once a ChatGPT Voice panel has actually been observed on this
     /// machine. Until then the helper cannot tell "Voice is closed" from
@@ -51,6 +55,7 @@ public struct Settings: Codable, Equatable, Sendable {
                 promptCommandID: String = "codex-voice",
                 wakePhrase: String = "Hey Codex",
                 voiceShortcut: VoiceShortcut = .default,
+                loginItemConfigured: Bool = false,
                 voiceShortcutSetupCompleted: Bool = false,
                 voicePanelDetectionProven: Bool = false,
                 automaticUpdateChecks: Bool = true,
@@ -68,6 +73,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.promptCommandID = promptCommandID
         self.wakePhrase = WakePhrase.normalize(wakePhrase) ?? "Hey Codex"
         self.voiceShortcut = voiceShortcut
+        self.loginItemConfigured = loginItemConfigured
         self.voiceShortcutSetupCompleted = voiceShortcutSetupCompleted
         self.voicePanelDetectionProven = voicePanelDetectionProven
         self.automaticUpdateChecks = automaticUpdateChecks
@@ -99,6 +105,8 @@ public struct Settings: Codable, Equatable, Sendable {
         self.wakePhrase = WakePhrase.normalize(try container.decodeIfPresent(String.self, forKey: .wakePhrase)
             ?? "Hey Codex") ?? "Hey Codex"
         self.voiceShortcut = try container.decodeIfPresent(VoiceShortcut.self, forKey: .voiceShortcut) ?? .default
+        self.loginItemConfigured = try container.decodeIfPresent(Bool.self, forKey: .loginItemConfigured)
+            ?? false
         self.voiceShortcutSetupCompleted = try container.decodeIfPresent(Bool.self, forKey: .voiceShortcutSetupCompleted)
             ?? false
         self.voicePanelDetectionProven = try container.decodeIfPresent(Bool.self, forKey: .voicePanelDetectionProven)

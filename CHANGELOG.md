@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.7
+
+### Fixed
+
+- **Hey Codex now starts when you log in.** It had no launch-at-login support at
+  all, so a reboot left it silently absent until you noticed the menu bar icon was
+  gone and opened it by hand. An app that listens for a wake phrase does nothing
+  while it is not running. It registers once, after setup is complete, and appears
+  in System Settings under General, Login Items.
+
+### Added
+
+- **Start at Login** in the menu, showing and controlling the same setting. If
+  macOS refuses the registration the item greys out and says why, rather than
+  showing a checkmark that is not true.
+
 ## 0.1.6
 
 ### Changed

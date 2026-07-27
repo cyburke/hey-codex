@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         beginLaunchFlow()
         refreshMenu()
         controller.checkForUpdates(userInitiated: false)
+        controller.configureLoginItemOnce()
         controller.logPermissionState("launch")
         startSetupPolling()
         // Show the user where Hey Codex lives, once, on the very first launch
@@ -94,6 +95,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(item("Report an Issue…", #selector(reportIssue)))
+        let login = item("Start at Login", #selector(toggleLoginItem))
+        login.state = LoginItem.isEnabled ? .on : .off
+        if LoginItem.isBlockedByUser {
+            login.isEnabled = false
+            login.toolTip = "Switched off for Hey Codex in System Settings, Login Items."
+        }
+        menu.addItem(login)
         menu.addItem(item("About Hey Codex", #selector(showAbout)))
         menu.addItem(.separator())
         let privacy = NSMenuItem(title: "Everything you say stays on this Mac", action: nil, keyEquivalent: "")
@@ -256,6 +264,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {
         NSMenuItem(title: title, action: action, keyEquivalent: "")
+    }
+
+    @objc private func toggleLoginItem() {
+        LoginItem.setEnabled(!LoginItem.isEnabled)
+        refreshMenu()
     }
 
     @objc private func openSetup() {

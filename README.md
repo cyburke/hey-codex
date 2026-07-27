@@ -37,6 +37,8 @@ The hotkey it presses is ChatGPT's own Voice shortcut, `⌃⌥V` by default, and
 
 Everything else lives in the menu bar icon: change your phrase, adjust sensitivity, or reopen setup from **Setup & Diagnostics**.
 
+Once setup is done, Hey Codex starts itself when you log in, since it cannot hear you while it is not running. Turn that off from **Start at Login** in the menu, or in System Settings under General, Login Items.
+
 To end a Voice session, just tell ChatGPT Voice directly with anything like "Close this voice session" and it will do it. Hey Codex will notice and start listening again on its own. While an active Voice session is open, this tool stops listening, so your wake phrase does nothing.
 
 It uses whichever microphone your Mac is set to, and follows along if you change it in **System Settings → Sound**. Settings has a picker if you'd rather pin one device.

@@ -228,7 +228,8 @@ final class AppController {
         let line = "\(Date()) [\(note)] AXIsProcessTrusted=\(AXIsProcessTrusted())"
             + " CGPreflightPostEventAccess=\(CGPreflightPostEventAccess())"
             + " mic=\(self.microphoneAuthorization) state=\(self.setupState)"
-            + " relaunchedArg=\(self.didRelaunchAfterAccessibilityGrant)\n"
+            + " relaunchedArg=\(self.didRelaunchAfterAccessibilityGrant)"
+            + " loginItem=\(LoginItem.isEnabled)\n"
         let url = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("HeyCodex/permissions-debug.txt")
@@ -752,6 +753,24 @@ final class AppController {
         guard !settings.voiceShortcutSetupCompleted else { return }
         var updated = settings
         updated.voiceShortcutSetupCompleted = true
+        try? SettingsStore().save(updated)
+        settings = updated
+    }
+
+    /// Turn on start-at-login once, for anyone whose setup is finished.
+    ///
+    /// An app that listens for a wake phrase does nothing while it is not
+    /// running, and nothing restarts it after a reboot, so without this it
+    /// quietly disappears the first time the Mac restarts. Hooking this to launch
+    /// rather than to the end of setup also covers everyone who finished setup
+    /// before the feature existed. It runs once: macOS lists the app under Login
+    /// Items where it can be switched off, and the menu carries the same toggle,
+    /// so this is a default rather than a decision taken away.
+    func configureLoginItemOnce() {
+        guard setupState.isComplete, !settings.loginItemConfigured else { return }
+        LoginItem.setEnabled(true)
+        var updated = settings
+        updated.loginItemConfigured = true
         try? SettingsStore().save(updated)
         settings = updated
     }
